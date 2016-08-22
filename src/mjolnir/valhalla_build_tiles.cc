@@ -134,7 +134,7 @@ int main(int argc, char** argv) {
   // Enhance the local level of the graph. This adds information to the local
   // level that is usable across all levels (density, administrative
   // information (and country based attribution), edge transition logic, etc.
-  GraphEnhancer::Enhance(pt, "access.bin");
+  GraphEnhancer::Enhance(pt, "access.bin", osm_data.vias, osm_data.res_ids);
 
   // Add transit
   TransitBuilder::Build(pt);
