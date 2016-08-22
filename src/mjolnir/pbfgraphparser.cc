@@ -437,37 +437,37 @@ struct graph_callback : public OSMPBF::Callback {
         OSMAccessRestriction restriction;
         restriction.set_type(AccessType::kHazmat);
         restriction.set_value(tag.second == "true" ? true : false);
-        osmdata_.access_restrictions.insert(AccessRestrictionsMap::value_type(osmid, restriction));
+        osmdata_.access_restrictions.insert(AccessRestrictionsMultiMap::value_type(osmid, restriction));
       }
       else if (tag.first == "maxheight") {
         OSMAccessRestriction restriction;
         restriction.set_type(AccessType::kMaxHeight);
         restriction.set_value(std::stof(tag.second)*100);
-        osmdata_.access_restrictions.insert(AccessRestrictionsMap::value_type(osmid, restriction));
+        osmdata_.access_restrictions.insert(AccessRestrictionsMultiMap::value_type(osmid, restriction));
       }
       else if (tag.first == "maxwidth") {
         OSMAccessRestriction restriction;
         restriction.set_type(AccessType::kMaxWidth);
         restriction.set_value(std::stof(tag.second)*100);
-        osmdata_.access_restrictions.insert(AccessRestrictionsMap::value_type(osmid, restriction));
+        osmdata_.access_restrictions.insert(AccessRestrictionsMultiMap::value_type(osmid, restriction));
       }
       else if (tag.first == "maxlength") {
         OSMAccessRestriction restriction;
         restriction.set_type(AccessType::kMaxLength);
         restriction.set_value(std::stof(tag.second)*100);
-        osmdata_.access_restrictions.insert(AccessRestrictionsMap::value_type(osmid, restriction));
+        osmdata_.access_restrictions.insert(AccessRestrictionsMultiMap::value_type(osmid, restriction));
       }
       else if (tag.first == "maxweight") {
         OSMAccessRestriction restriction;
         restriction.set_type(AccessType::kMaxWeight);
         restriction.set_value(std::stof(tag.second)*100);
-        osmdata_.access_restrictions.insert(AccessRestrictionsMap::value_type(osmid, restriction));
+        osmdata_.access_restrictions.insert(AccessRestrictionsMultiMap::value_type(osmid, restriction));
       }
       else if (tag.first == "maxaxleload") {
         OSMAccessRestriction restriction;
         restriction.set_type(AccessType::kMaxAxleLoad);
         restriction.set_value(std::stof(tag.second)*100);
-        osmdata_.access_restrictions.insert(AccessRestrictionsMap::value_type(osmid, restriction));
+        osmdata_.access_restrictions.insert(AccessRestrictionsMultiMap::value_type(osmid, restriction));
       }
 
       else if (tag.first == "default_speed")
@@ -747,7 +747,9 @@ struct graph_callback : public OSMPBF::Callback {
     bool isBicycle = false;
     uint32_t bike_network_mask = 0;
 
-    std::string network, ref, name;
+    std::string network, ref, name, except;
+    uint32_t modes = (kAutoAccess |  kTaxiAccess | kBusAccess | kBicycleAccess |
+                      kTruckAccess | kEmergencyAccess);
 
     for (const auto& tag : results) {
 
@@ -771,6 +773,9 @@ struct graph_callback : public OSMPBF::Callback {
       }
       else if (tag.first == "name") {
         name = tag.second;
+      }
+      else if (tag.first == "except") {
+        except = tag.second;
       }
       else if (tag.first == "restriction" && !tag.second.empty()) {
         RestrictionType type = (RestrictionType) std::stoi(tag.second);
@@ -853,7 +858,7 @@ struct graph_callback : public OSMPBF::Callback {
       bike.ref_index = ref_index;
 
       for (const auto& member : members) {
-        osmdata_.bike_relations.insert(BikeMap::value_type(member.member_id, bike));
+        osmdata_.bike_relations.insert(BikeMultiMap::value_type(member.member_id, bike));
       }
 
     }
@@ -895,6 +900,7 @@ struct graph_callback : public OSMPBF::Callback {
       }
     }
     else if (isRestriction && hasRestriction) {
+      std::vector<uint64_t> vias;
 
       for (const auto& member : members) {
 
@@ -903,13 +909,85 @@ struct graph_callback : public OSMPBF::Callback {
           from_way_id = member.member_id;
         else if (member.role == "to" && member.member_type == OSMPBF::Relation::MemberType::Relation_MemberType_WAY)
           restriction.set_to(member.member_id);
-        else if (member.role == "via" && member.member_type == OSMPBF::Relation::MemberType::Relation_MemberType_NODE)
+        else if (member.role == "via" && member.member_type == OSMPBF::Relation::MemberType::Relation_MemberType_NODE) {
+          if (vias.size()) { //mix of nodes and ways.  Not supported yet.
+            from_way_id = 0;
+            break;
+          }
           restriction.set_via(member.member_id);
+        }
+        else if (member.role == "via" && member.member_type == OSMPBF::Relation::MemberType::Relation_MemberType_WAY) {
+          if (restriction.via()) { //mix of nodes and ways.  Not supported yet.
+            from_way_id = 0;
+            break;
+          }
+          vias.push_back(member.member_id);
+        }
       }
 
-      // Add the restriction to the list.  For now only support simple restrictions.
-      if (from_way_id != 0 && restriction.via() && restriction.to())
-        osmdata_.restrictions.insert(RestrictionsMap::value_type(from_way_id, restriction));
+      if (vias.size() > kMaxViasPerRestriction) {
+        LOG_INFO("skipping restriction with vias > the max allowed: " + std::to_string(osmid));
+        from_way_id = 0;
+      }
+      // Add the restriction to the list.
+      if (from_way_id != 0 && (restriction.via() || vias.size()) && restriction.to()) {
+
+        // everything is good for this complex restriction.  only complex restrictions have
+        // a vector of vias
+        if (vias.size()) {
+          restriction.set_via_begin_index(osmdata_.vias.size());
+          for (const auto& via : vias) {
+            osmdata_.vias.push_back(via);
+            osmdata_.via_map.emplace(via,osmdata_.vias.size()-1);
+          }
+          restriction.set_via_end_index(osmdata_.vias.size()-1);
+        }
+        // remove access as the restriction does not apply to these modes.
+        std::vector<std::string> tokens  = GetTagTokens(except);
+        for (const auto& t : tokens) {
+          if (t == "motorcar")
+            modes = modes & ~kAutoAccess;
+          else if (t == "psv")
+            modes = modes & ~(kTaxiAccess | kBusAccess);
+          else if (t == "taxi")
+            modes = modes & ~kTaxiAccess;
+          else if (t == "bus")
+            modes = modes & ~kBusAccess;
+          else if (t == "bicycle")
+            modes = modes & ~kBicycleAccess;
+          else if (t == "hgv")
+            modes = modes & ~kTruckAccess;
+          else if (t == "emergency")
+            modes = modes & ~kEmergencyAccess;
+        }
+        restriction.set_modes(modes);
+
+        // complex restrictions only have offsets for from and to
+        if (vias.size()) {
+          // check if from id is already added.
+          auto index = osmdata_.index_map.find(from_way_id);
+          if (index == osmdata_.index_map.end()) {
+            osmdata_.res_ids.push_back(from_way_id);
+            osmdata_.index_map.emplace(from_way_id,osmdata_.res_ids.size()-1);
+            from_way_id = (osmdata_.res_ids.size()-1);
+
+          } else from_way_id = index->second;
+
+          osmdata_.end_map.insert(EndMap::value_type(restriction.to(), from_way_id));
+
+          // check if to id is already added.
+          index = osmdata_.index_map.find(restriction.to());
+          if (index == osmdata_.index_map.end()) {
+            osmdata_.res_ids.push_back(restriction.to());
+            osmdata_.index_map.emplace(restriction.to(),osmdata_.res_ids.size()-1);
+            restriction.set_to(osmdata_.res_ids.size()-1);
+
+          } else restriction.set_to(index->second);
+
+        }
+
+        osmdata_.restrictions.insert(RestrictionsMultiMap::value_type(from_way_id, restriction));
+      }
     }
   }
 
