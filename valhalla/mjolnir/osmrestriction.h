@@ -3,6 +3,7 @@
 
 #include <valhalla/baldr/graphconstants.h>
 #include <valhalla/baldr/graphid.h>
+#include <vector>
 
 namespace valhalla {
 namespace mjolnir {
@@ -100,19 +101,49 @@ class OSMRestriction {
   void set_via(uint64_t via);
 
   /**
-   * Set the via node GraphId.
-   */
-  void set_via(const baldr::GraphId& id);
-
-  /**
    * Get the via OSM node id.
    */
   uint64_t via() const;
 
   /**
+   * Set the via node GraphId.
+   */
+  void set_via(const baldr::GraphId& id);
+
+  /**
    * Get the via GraphId
    */
   const baldr::GraphId& via_graphid() const;
+
+  /**
+   * Set the vias begin index
+   */
+  void set_via_begin_index(uint32_t via_begin_index);
+
+  /**
+   * Get the vias begin index
+   */
+  uint32_t via_begin_index() const;
+
+  /**
+   * Set the vias end index
+   */
+  void set_via_end_index(uint32_t via_end_index);
+
+  /**
+   * Get the vias end index
+   */
+  uint32_t via_end_index() const;
+
+  /**
+   * Set the modes
+   */
+  void set_modes(uint32_t modes);
+
+  /**
+   * Get the modes
+   */
+  uint32_t modes() const;
 
   /**
    * Set the to way id
@@ -147,6 +178,16 @@ class OSMRestriction {
     uint32_t minute_off_  : 6;
   };
   Attributes attributes_;
+
+  // complex restriction's begin index for vias
+  uint32_t via_begin_index_;
+
+  // complex restriction's end index for vias
+  uint32_t via_end_index_;
+
+  // access modes -- who does this restriction apply to?  cars, bus, etc.
+  uint32_t modes_;
+
 };
 
 }

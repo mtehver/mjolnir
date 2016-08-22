@@ -8,7 +8,10 @@ namespace mjolnir {
 OSMRestriction::OSMRestriction()
     : via_{},
       to_(0),
-      attributes_{} {
+      attributes_{},
+      via_begin_index_(0),
+      via_end_index_(0),
+      modes_(0) {
 }
 
 OSMRestriction::~OSMRestriction() {
@@ -89,19 +92,49 @@ void OSMRestriction::set_via(uint64_t via) {
   via_.osmid = via;
 }
 
-// Set the via id
-void OSMRestriction::set_via(const GraphId& id) {
-  via_.id = id;
-}
-
 // Get the via OSM node id
 uint64_t OSMRestriction::via() const {
   return via_.osmid;
 }
 
+// Set the via id
+void OSMRestriction::set_via(const GraphId& id) {
+  via_.id = id;
+}
+
 // Get the via node's GraphId
 const GraphId& OSMRestriction::via_graphid() const {
   return via_.id;
+}
+
+// Set the vias begin index
+void OSMRestriction::set_via_begin_index(uint32_t via_begin_index) {
+  via_begin_index_ = via_begin_index;
+}
+
+// Get the vias begin index
+uint32_t OSMRestriction::via_begin_index() const {
+  return via_begin_index_;
+}
+
+// Set the vias end index
+void OSMRestriction::set_via_end_index(uint32_t via_end_index) {
+  via_end_index_ = via_end_index;
+}
+
+// Get the vias end index
+uint32_t OSMRestriction::via_end_index() const {
+  return via_end_index_;
+}
+
+// Set the modes
+void OSMRestriction::set_modes(uint32_t modes) {
+  modes_ = modes;
+}
+
+// Get the modes
+uint32_t OSMRestriction::modes() const {
+  return modes_;
 }
 
 // Set the to way id
