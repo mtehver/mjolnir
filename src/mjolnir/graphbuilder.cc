@@ -250,6 +250,8 @@ uint32_t CreateSimpleTurnRestriction(const uint64_t wayid, const size_t endnode,
   auto node = *node_itr;
   std::vector<OSMRestriction> trs;
   for (auto r = res.first; r != res.second; ++r) {
+    // via will not be populated for complex restrictions.
+    // one via denotes a simple restriction
     if (r->second.via() == node.node.osmid) {
       if (r->second.day_on() != DOW::kNone) {
         stats.timedrestrictions++;
@@ -338,12 +340,13 @@ uint32_t AddAccessRestrictions(const uint32_t edgeid, const uint64_t wayid,
 
 void BuildTileSet(const std::string& ways_file, const std::string& way_nodes_file,
     const std::string& nodes_file, const std::string& edges_file,
-    const TileHierarchy& hierarchy, const OSMData& osmdata,
+    const TileHierarchy& hierarchy, OSMData& osmdata,
     const std::unique_ptr<const valhalla::skadi::sample>& sample,
     std::map<GraphId, size_t>::const_iterator tile_start,
     std::map<GraphId, size_t>::const_iterator tile_end,
     const uint32_t tile_creation_date,
     const boost::property_tree::ptree& pt,
+    std::mutex& lock,
     std::promise<DataQuality>& result) {
 
   sequence<OSMWay> ways(ways_file, false);
@@ -392,6 +395,8 @@ void BuildTileSet(const std::string& ways_file, const std::string& way_nodes_fil
       // What actually writes the tile
       GraphId tile_id = tile_start->first.Tile_Base();
       GraphTileBuilder graphtile(hierarchy, tile_id, false);
+
+      const auto& local_level = hierarchy.levels().rbegin()->second.level;
 
       graphtile.AddTileCreationDate(tile_creation_date);
 
@@ -693,6 +698,82 @@ void BuildTileSet(const std::string& ways_file, const std::string& way_nodes_fil
             }
           }
 
+          if (forward) {
+            GraphId edgeid(id, local_level, idx);
+
+            // is this edge part of a complex restriction?
+            // if so update the wayid to be a graphid
+            auto range = osmdata.via_map.equal_range(w.way_id());
+            if (range.first != osmdata.via_map.end()) {
+              directededge.set_part_of_complex_restriction(true);
+              for (auto it = range.first; it != range.second; ++it) {
+                lock.lock();
+                osmdata.vias[it->second] = edgeid;
+                lock.unlock();
+              }
+            }
+
+            // is this edge the start or end of a complex restriction?
+            // if so update the wayid to be a graphid
+            auto index = osmdata.index_map.find(w.way_id());
+            if (index != osmdata.index_map.end()) {
+              lock.lock();
+              osmdata.res_ids[index->second] = edgeid;
+              lock.unlock();
+
+              // is this edge the end of a restriction?
+              auto to = osmdata.end_map.equal_range(w.way_id());
+              if (to.first != osmdata.end_map.end()) {
+
+                for (auto it = to.first; it != to.second; ++it) {
+                  auto res = osmdata.restrictions.equal_range(it->second);
+                  if (res.first != osmdata.restrictions.end()) {
+                    for (auto r = res.first; r != res.second; ++r) {
+                      if (r->second.via_begin_index() != 0 && r->second.via_end_index() != 0 &&
+                          r->second.to() == index->second) {
+
+                        // set the modes
+                        directededge.set_end_restriction(directededge.end_restriction() | r->second.modes());
+
+                        std::vector<uint64_t> vias;
+                        vias.emplace_back(r->second.via_begin_index());
+                        vias.emplace_back(r->second.via_end_index());
+
+                        // must add the complex restriction for the to/end edges.  dups will be removed in the
+                        // graph enhancer.  at this point to, from, and vias are all wayids.
+                        graphtile.AddComplexRestriction(r->first, vias,
+                                                        r->second.to(), r->second.type(),
+                                                        r->second.day_on(), r->second.day_off(),
+                                                        r->second.hour_on(), r->second.minute_on(),
+                                                        r->second.hour_off(), r->second.minute_off());
+                      }
+                    }
+                  }
+                }
+              }
+
+              // is this edge the start of a restriction.
+              auto res = osmdata.restrictions.equal_range(index->second);
+              if (res.first != osmdata.restrictions.end()) {
+                for (auto r = res.first; r != res.second; ++r) {
+                  if (r->second.via_begin_index() != 0 && r->second.via_end_index() != 0)
+                    directededge.set_start_restriction(directededge.start_restriction() | r->second.modes());
+
+                  std::vector<uint64_t> vias;
+                  vias.emplace_back(r->second.via_begin_index());
+                  vias.emplace_back(r->second.via_end_index());
+
+                  // add the complex restriction for the from/begin edges.  dups will be removed in the
+                  // graph enhancer.  at this point to, from, and vias are all wayids.
+                  graphtile.AddComplexRestriction(r->first, vias,
+                                                  r->second.to(), r->second.type(),
+                                                  r->second.day_on(), r->second.day_off(),
+                                                  r->second.hour_on(), r->second.minute_on(),
+                                                  r->second.hour_off(), r->second.minute_off());
+                }
+              }
+            }
+          }
           // Set drive on right flag
           if (admin_index != 0)
             directededge.set_drive_on_right(drive_on_right[admin_index]);
@@ -756,7 +837,7 @@ void BuildTileSet(const std::string& ways_file, const std::string& way_nodes_fil
 }
 
 // Build tiles for the local graph hierarchy
-void BuildLocalTiles(const unsigned int thread_count, const OSMData& osmdata,
+void BuildLocalTiles(const unsigned int thread_count, OSMData& osmdata,
   const std::string& ways_file, const std::string& way_nodes_file,
   const std::string& nodes_file, const std::string& edges_file,
   const std::map<GraphId, size_t>& tiles, const TileHierarchy& tile_hierarchy, DataQuality& stats,
@@ -778,6 +859,8 @@ void BuildLocalTiles(const unsigned int thread_count, const OSMData& osmdata,
   size_t at_ceiling = tiles.size() - (threads.size() * floor);
   std::map<GraphId, size_t>::const_iterator tile_start, tile_end = tiles.begin();
 
+  std::mutex lock;
+
   // Atomically pass around stats info
   for (size_t i = 0; i < threads.size(); ++i) {
     // Figure out how many this thread will work on (either ceiling or floor)
@@ -790,8 +873,8 @@ void BuildLocalTiles(const unsigned int thread_count, const OSMData& osmdata,
     threads[i].reset(
       new std::thread(BuildTileSet,  std::cref(ways_file), std::cref(way_nodes_file),
                       std::cref(nodes_file), std::cref(edges_file), std::cref(tile_hierarchy),
-                      std::cref(osmdata), std::cref(sample), tile_start, tile_end, tile_creation_date,
-                      std::cref(pt.get_child("mjolnir")), std::ref(results[i]))
+                      std::ref(osmdata), std::cref(sample), tile_start, tile_end, tile_creation_date,
+                      std::cref(pt.get_child("mjolnir")), std::ref(lock), std::ref(results[i]))
     );
   }
 
@@ -823,7 +906,7 @@ namespace valhalla {
 namespace mjolnir {
 
 // Build the graph from the input
-void GraphBuilder::Build(const boost::property_tree::ptree& pt, const OSMData& osmdata,
+void GraphBuilder::Build(const boost::property_tree::ptree& pt, OSMData& osmdata,
     const std::string& ways_file, const std::string& way_nodes_file) {
   std::string nodes_file = "nodes.bin";
   std::string edges_file = "edges.bin";
