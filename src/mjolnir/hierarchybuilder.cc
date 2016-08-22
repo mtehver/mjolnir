@@ -719,11 +719,9 @@ void AddConnectionsToBaseTile(const uint32_t basetileid,
   GraphTileHeader hdr = existinghdr;
   hdr.set_directededgecount( existinghdr.directededgecount() + connections.size());
   std::size_t addedsize = connections.size() * sizeof(DirectedEdge);
+  hdr.set_complex_restriction_offset(existinghdr.complex_restriction_offset() + addedsize);
   hdr.set_edgeinfo_offset(existinghdr.edgeinfo_offset() + addedsize);
   hdr.set_textlist_offset(existinghdr.textlist_offset() + addedsize);
-
-  // TODO - adjust these offsets if needed
-  hdr.set_complex_restriction_offset(existinghdr.complex_restriction_offset());
 
   // Get the directed edge index of the first sign. If no signs are
   // present in this tile set a value > number of directed edges
