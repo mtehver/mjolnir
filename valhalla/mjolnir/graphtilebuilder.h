@@ -25,6 +25,7 @@
 #include <valhalla/baldr/transitstop.h>
 #include <valhalla/baldr/tilehierarchy.h>
 
+#include <valhalla/mjolnir/complexrestrictionbuilder.h>
 #include <valhalla/mjolnir/directededgebuilder.h>
 #include <valhalla/mjolnir/edgeinfobuilder.h>
 
@@ -161,6 +162,31 @@ class GraphTileBuilder : public baldr::GraphTile {
    */
   bool HasEdgeInfo(const uint32_t edgeindex, const baldr::GraphId& nodea,
                        const baldr::GraphId& nodeb, uint32_t& edge_info_offset);
+
+  /**
+    * Add Complex Restriction to the tile.
+    * @param  from        restriction starts here
+    * @param  vias        ids that are part of the restriction
+    * @param  to          restriction ends here
+    * @param  type        type of restriction
+    * @param  day_on      dow restriction starts
+    * @param  day_off     dow restriction ends
+    * @param  hour_on     hour the restriction starts
+    * @param  minute_on   minute the restriction starts
+    * @param  hour_off    hour restriction ends
+    * @param  minute_off  minute restriction endss
+    */
+  void AddComplexRestriction(const uint64_t from, const std::vector<uint64_t> vias,
+                             const uint64_t to, const RestrictionType type,
+                             const DOW day_on, const DOW day_off,
+                             const uint64_t hour_on, const uint64_t minute_on,
+                             const uint64_t hour_off, const uint64_t minute_off);
+
+  /**
+   * Update all of the complex restrictions.
+   * @param  complex_restriction_builder  list of complex restrictions.
+   */
+  void UpdateComplexRestrictions(const std::list<ComplexRestrictionBuilder>& complex_restriction_builder);
 
   /**
    * Add the edge info to the tile.
@@ -337,6 +363,9 @@ class GraphTileBuilder : public baldr::GraphTile {
         std::make_tuple(edgeindex, nodeb, nodea);
   }
 
+  // Write all complex restriction items to specified stream
+  void SerializeComplexRestrictionsToOstream(std::ostream& out) const;
+
   // Write all edgeinfo items to specified stream
   void SerializeEdgeInfosToOstream(std::ostream& out) const;
 
@@ -383,6 +412,12 @@ class GraphTileBuilder : public baldr::GraphTile {
 
   // Admin info offset
   std::unordered_map<std::string,size_t> admin_info_offset_map_;
+
+  // complex list offset
+  uint32_t complex_restriction_list_offset_ = 0;
+
+  // The complex restriction list
+  std::list<ComplexRestrictionBuilder> complex_restriction_builder_;
 
   // Edge info offset and map
   size_t edge_info_offset_ = 0;

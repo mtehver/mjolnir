@@ -1,6 +1,7 @@
 #include "mjolnir/graphtilebuilder.h"
 
 #include <valhalla/midgard/logging.h>
+#include <valhalla/baldr/datetime.h>
 #include <valhalla/baldr/edgeinfo.h>
 #include <boost/format.hpp>
 #include <boost/filesystem/operations.hpp>
@@ -102,6 +103,33 @@ GraphTileBuilder::GraphTileBuilder(const baldr::TileHierarchy& hierarchy,
     edge_info_offsets.insert(diredge.edgeinfo_offset());
   }
 
+  // create the list of complex restrictions.
+  complex_restriction_list_offset_ = 0;
+  while (complex_restriction_list_offset_ < complex_restriction_size_) {
+
+    ComplexRestriction cr(complex_restriction_ + complex_restriction_list_offset_);
+
+    ComplexRestrictionBuilder crb;
+    crb.set_from_id(cr.from_id());
+    crb.set_to_id(cr.to_id());
+    crb.set_begin_time(cr.begin_time());
+    crb.set_elapsed_time(cr.end_time());
+    crb.set_begin_day(cr.begin_day());
+    crb.set_end_day(cr.end_day());
+    crb.set_via_list(cr.GetVias());
+    crb.set_modes(cr.modes());
+
+    complex_restriction_list_offset_ += crb.SizeOf();
+    complex_restriction_builder_.emplace_back(std::move(crb));
+  }
+
+  if (complex_restriction_list_offset_ != complex_restriction_size_) {
+    LOG_WARN("GraphTileBuilder TileID: " +
+          std::to_string(header_->graphid().tileid()) +
+          " offsets are off for complex restrictions: = " + std::to_string(complex_restriction_list_offset_) +
+          " size = " + std::to_string(complex_restriction_size_));
+  }
+
   // EdgeInfo. Create list of EdgeInfoBuilders. Add to text offset set.
   edge_info_offset_ = 0;
   for (auto offset : edge_info_offsets) {
@@ -112,6 +140,7 @@ GraphTileBuilder::GraphTileBuilder(const baldr::TileHierarchy& hierarchy,
             " offset stored in directed edge: = " + std::to_string(offset) +
             " current ei offset= " + std::to_string(edge_info_offset_));
     }
+
     EdgeInfo ei(edgeinfo_ + offset, textlist_, textlist_size_);
     EdgeInfoBuilder eib;
     eib.set_wayid(ei.wayid());
@@ -165,7 +194,7 @@ void GraphTileBuilder::StoreTileData() {
     header_builder_.set_schedulecount(schedule_builder_.size());
     header_builder_.set_signcount(signs_builder_.size());
     header_builder_.set_admincount(admins_builder_.size());
-    header_builder_.set_edgeinfo_offset(
+    header_builder_.set_complex_restriction_offset(
         (sizeof(GraphTileHeader))
             + (nodes_builder_.size() * sizeof(NodeInfo))
             + (directededges_builder_.size() * sizeof(DirectedEdge))
@@ -176,6 +205,9 @@ void GraphTileBuilder::StoreTileData() {
             + (schedule_builder_.size() * sizeof(TransitSchedule))
             + (signs_builder_.size() * sizeof(Sign))
             + (admins_builder_.size() * sizeof(Admin)));
+
+    header_builder_.set_edgeinfo_offset(
+        header_builder_.complex_restriction_offset() + complex_restriction_list_offset_);
 
     header_builder_.set_textlist_offset(
         header_builder_.edgeinfo_offset() + edge_info_offset_);
@@ -223,6 +255,9 @@ void GraphTileBuilder::StoreTileData() {
                admins_builder_.size() * sizeof(Admin));
 
     // Edge bins can only be added after you've stored the tile
+
+    // Write the edge data
+    SerializeComplexRestrictionsToOstream(file);
 
     // Write the edge data
     SerializeEdgeInfosToOstream(file);
@@ -304,6 +339,9 @@ void GraphTileBuilder::Update(
     file.write(reinterpret_cast<const char*>(&edge_bins_[0]),
         sizeof(GraphId) * header_->bin_offset(kBinsDim - 1, kBinsDim - 1).second);
 
+    // Write the existing complex restrictions
+    file.write(complex_restriction_, complex_restriction_size_);
+
     // Write the existing edgeinfo
     file.write(edgeinfo_, edgeinfo_size_);
 
@@ -379,7 +417,8 @@ void GraphTileBuilder::Update(const GraphTileHeader& hdr,
     file.write(reinterpret_cast<const char*>(&edge_bins_[0]),
       sizeof(GraphId) * hdr.bin_offset(kBinsDim - 1, kBinsDim - 1).second);
 
-    // Write the existing edgeinfo and textlist
+    // Write the existing complex_restriction, edgeinfo, and textlist
+    file.write(complex_restriction_, complex_restriction_size_);
     file.write(edgeinfo_, edgeinfo_size_);
     file.write(textlist_, textlist_size_);
 
@@ -459,6 +498,49 @@ bool GraphTileBuilder::HasEdgeInfo(const uint32_t edgeindex, const baldr::GraphI
     return true;
   }
   return false;
+}
+
+// Add complex restriction.
+// Note: at this point the vias and to are just indexes into the osmdata vector.  They will need
+// to be updated to be edgeids in the enhancer.
+void GraphTileBuilder::AddComplexRestriction(const uint64_t from, const std::vector<uint64_t> vias,
+                                             const uint64_t to, const RestrictionType type,
+                                             const DOW day_on, const DOW day_off,
+                                             const uint64_t hour_on, const uint64_t minute_on,
+                                             const uint64_t hour_off, const uint64_t minute_off) {
+
+    // Add a new complex restriction to the list and get a reference to it
+    complex_restriction_builder_.emplace_back();
+    ComplexRestrictionBuilder& complex_restriction = complex_restriction_builder_.back();
+
+    complex_restriction.set_from_id(from);
+    complex_restriction.set_via_list(vias);
+    complex_restriction.set_to_id(to);
+    complex_restriction.set_type(type);
+
+    complex_restriction.set_begin_day(day_on);
+    complex_restriction.set_end_day(day_off);
+    uint64_t begin_time = DateTime::seconds_from_midnight(std::to_string(hour_on) + ":" +
+                                                          std::to_string(minute_on));
+    complex_restriction.set_begin_time(begin_time);
+    complex_restriction.set_elapsed_time(DateTime::seconds_from_midnight(std::to_string(hour_off) + ":" +
+                                                                         std::to_string(minute_off)) - begin_time);
+    complex_restriction_list_offset_ += complex_restriction.SizeOf();
+
+}
+
+// Add the complex restrictions and update the list offset.  The to, from, and vias should all point to edgeids.
+void GraphTileBuilder::UpdateComplexRestrictions(const std::list<ComplexRestrictionBuilder>& complex_restriction_builder) {
+
+  complex_restriction_list_offset_ = 0;
+  complex_restriction_builder_.clear();
+  // Add a new complex restrictions to the lists
+  complex_restriction_builder_ = complex_restriction_builder;
+
+  for (const auto& crb : complex_restriction_builder) {
+    // Update edge offset for next item
+    complex_restriction_list_offset_ += crb.SizeOf();
+  }
 }
 
 // Add edge info
@@ -577,6 +659,13 @@ uint32_t GraphTileBuilder::AddAdmin(const std::string& country_name,
 void GraphTileBuilder::SerializeEdgeInfosToOstream(std::ostream& out) const {
   for (const auto& edgeinfo : edgeinfo_list_) {
     out << edgeinfo;
+  }
+}
+
+// Serialize the complex restriction list
+void GraphTileBuilder::SerializeComplexRestrictionsToOstream(std::ostream& out) const {
+  for (const auto& complex_restriction : complex_restriction_builder_) {
+    out << complex_restriction;
   }
 }
 
@@ -734,6 +823,7 @@ void GraphTileBuilder::AddBins(const TileHierarchy& hierarchy, const GraphTile* 
   //NOTE: if format changes to add more things here we need to make a change here as well
   GraphTileHeader header = *tile->header();
   header.set_edge_bin_offsets(offsets);
+  header.set_complex_restriction_offset(header.complex_restriction_offset() + shift);
   header.set_edgeinfo_offset(header.edgeinfo_offset() + shift);
   header.set_textlist_offset(header.textlist_offset() + shift);
   //rewrite the tile
