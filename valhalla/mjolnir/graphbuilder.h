@@ -28,7 +28,7 @@ class GraphBuilder {
    * @param  ways_file      where to store the ways so they are not in memory
    * @param  way_nodes_file where to store the nodes so they are not in memory
    */
-  static void Build(const boost::property_tree::ptree& pt, const OSMData& osmdata,
+  static void Build(const boost::property_tree::ptree& pt, OSMData& osmdata,
       const std::string& ways_file, const std::string& way_nodes_file);
 
   static std::string GetRef(const std::string& way_ref, const std::string& relation_ref);
