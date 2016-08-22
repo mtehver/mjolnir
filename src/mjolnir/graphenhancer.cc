@@ -902,7 +902,8 @@ bool ConsistentNames(const std::string& country_code,
 // We make sure to lock on reading and writing because we dont want to race
 // since difference threads, use for the tilequeue as well
 void enhance(const boost::property_tree::ptree& pt,
-             const std::string& access_file,
+             const std::string& access_file, const std::vector<uint64_t> vias,
+             const std::vector<uint64_t> res_ids,
              const boost::property_tree::ptree& hierarchy_properties,
              std::queue<GraphId>& tilequeue, std::mutex& lock,
              std::promise<enhancer_stats>& result) {
@@ -1049,7 +1050,9 @@ void enhance(const boost::property_tree::ptree& pt,
 
       // Go through directed edges and "enhance" directed edge attributes
       const DirectedEdge* edges = tilebuilder.directededges(nodeinfo.edge_index());
-      for (uint32_t j = 0; j <  nodeinfo.edge_count(); j++) {
+      GraphId edgeid(id, local_level, nodeinfo.edge_index());
+
+      for (uint32_t j = 0; j <  nodeinfo.edge_count(); j++, edgeid++) {
         DirectedEdge& directededge =
             tilebuilder.directededge_builder(nodeinfo.edge_index() + j);
 
@@ -1185,6 +1188,58 @@ void enhance(const boost::property_tree::ptree& pt,
       }
     }
 
+    std::unordered_multimap<uint64_t, ComplexRestriction> complex_restrictions =
+        tilebuilder.GetRestrictions(false);
+    std::unordered_multimap<uint64_t, ComplexRestriction> tmp_cr;
+    std::list<ComplexRestrictionBuilder> updated_cr_list;
+
+    // determine if we need to add this complex restriction or not.
+    // basically we do not want any dups.
+    for (const auto& cr : complex_restrictions) {
+      bool bfound = false;
+      auto res = tmp_cr.equal_range(cr.second.from_id());
+      if (res.first != tmp_cr.end()) {
+        for (auto r = res.first; r != res.second; ++r) {
+          if (cr.second == r->second) {
+            bfound = true;
+            break;
+          }
+        }
+      }
+      if (bfound) // no dups.
+        continue;
+
+      tmp_cr.emplace(cr.second.from_id(), cr.second);
+
+      // update the to and from to be graphids.
+      uint64_t from = res_ids[cr.second.from_id()];
+      uint64_t to = res_ids[cr.second.to_id()];
+
+      // update the vias to be graphids
+      const std::vector<uint64_t> cr_vias = cr.second.GetVias();
+      std::vector<uint64_t> graphid_vias;
+      uint32_t i = cr_vias[0];
+      while (i <= cr_vias[1]) {
+        graphid_vias.push_back(vias[i]);
+        i++;
+      }
+
+      updated_cr_list.emplace_back();
+      ComplexRestrictionBuilder& complex_restriction = updated_cr_list.back();
+
+      complex_restriction.set_from_id(from);
+      complex_restriction.set_via_list(graphid_vias);
+      complex_restriction.set_to_id(to);
+      complex_restriction.set_type(cr.second.type());
+
+      complex_restriction.set_begin_day(cr.second.begin_day());
+      complex_restriction.set_end_day(cr.second.end_day());
+      complex_restriction.set_begin_time(cr.second.begin_time());
+      complex_restriction.set_elapsed_time(cr.second.elapsed_time());
+    }
+    // update the complex restrictions in the tile.
+    tilebuilder.UpdateComplexRestrictions(updated_cr_list);
+
     // Replace access restrictions
     if (ar_before != access_restrictions.size()) {
       LOG_ERROR("Mismatch in access restriction count before " + std::to_string(ar_before) + ""
@@ -1219,7 +1274,9 @@ namespace mjolnir {
 
 // Enhance the local level of the graph
 void GraphEnhancer::Enhance(const boost::property_tree::ptree& pt,
-                            const std::string& access_file) {
+                            const std::string& access_file,
+                            const std::vector<uint64_t> vias,
+                            const std::vector<uint64_t> res_ids) {
   // A place to hold worker threads and their results, exceptions or otherwise
   std::vector<std::shared_ptr<std::thread> > threads(
     std::max(static_cast<unsigned int>(1),
@@ -1254,7 +1311,7 @@ void GraphEnhancer::Enhance(const boost::property_tree::ptree& pt,
     results.emplace_back();
     thread.reset(new std::thread(enhance,
                  std::cref(pt.get_child("mjolnir")),
-                 std::cref(access_file),
+                 std::cref(access_file), std::cref(vias), std::cref(res_ids),
                  std::ref(hierarchy_properties), std::ref(tilequeue),
                  std::ref(lock), std::ref(results.back())));
   }
