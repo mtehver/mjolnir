@@ -12,6 +12,7 @@
 #include <boost/format.hpp>
 #include <boost/algorithm/string.hpp>
 
+#include <valhalla/baldr/complexrestriction.h>
 #include <valhalla/baldr/tilehierarchy.h>
 #include <valhalla/midgard/sequence.h>
 #include <valhalla/midgard/logging.h>
