@@ -756,20 +756,21 @@ void BuildTileSet(const std::string& ways_file, const std::string& way_nodes_fil
               auto res = osmdata.restrictions.equal_range(index->second);
               if (res.first != osmdata.restrictions.end()) {
                 for (auto r = res.first; r != res.second; ++r) {
-                  if (r->second.via_begin_index() != 0 && r->second.via_end_index() != 0)
+                  if (r->second.via_begin_index() != 0 && r->second.via_end_index() != 0) {
                     directededge.set_start_restriction(directededge.start_restriction() | r->second.modes());
 
-                  std::vector<uint64_t> vias;
-                  vias.emplace_back(r->second.via_begin_index());
-                  vias.emplace_back(r->second.via_end_index());
+                    std::vector<uint64_t> vias;
+                    vias.emplace_back(r->second.via_begin_index());
+                    vias.emplace_back(r->second.via_end_index());
 
-                  // add the complex restriction for the from/begin edges.  dups will be removed in the
-                  // graph enhancer.  at this point to, from, and vias are all wayids.
-                  graphtile.AddComplexRestriction(r->first, vias,
-                                                  r->second.to(), r->second.type(),
-                                                  r->second.day_on(), r->second.day_off(),
-                                                  r->second.hour_on(), r->second.minute_on(),
-                                                  r->second.hour_off(), r->second.minute_off());
+                    // add the complex restriction for the from/begin edges.  dups will be removed in the
+                    // graph enhancer.  at this point to, from, and vias are all wayids.
+                    graphtile.AddComplexRestriction(r->first, vias,
+                                                    r->second.to(), r->second.type(),
+                                                    r->second.day_on(), r->second.day_off(),
+                                                    r->second.hour_on(), r->second.minute_on(),
+                                                    r->second.hour_off(), r->second.minute_off());
+                  }
                 }
               }
             }
