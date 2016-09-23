@@ -608,7 +608,6 @@ void TransitBuilder::Build(const boost::property_tree::ptree& pt) {
   }
   // Also bail if nothing inside
   transit_dir->push_back('/');
-
   GraphReader reader(hierarchy_properties);
   const auto& hierarchy = reader.GetTileHierarchy();
   auto local_level = hierarchy.levels().rbegin()->first;
