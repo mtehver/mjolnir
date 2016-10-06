@@ -38,7 +38,7 @@ void statistics::build_db(const boost::property_tree::ptree& pt) {
 
   // loading SpatiaLite as an extension
   sqlite3_enable_load_extension(db_handle, 1);
-#if SQLITE_VERSION_NUMBER > 3008002
+#if SQLITE_VERSION_NUMBER > 3008007
     sql = "SELECT load_extension('mod_spatialite')";
 #else
     sql = "SELECT load_extension('libspatialite')";
@@ -103,7 +103,6 @@ void statistics::build_db(const boost::property_tree::ptree& pt) {
   sqlite3_close(db_handle);
   LOG_INFO("Statistics database saved to statistics.sqlite");
 }
-
 void statistics::create_tile_tables(sqlite3 *db_handle, sqlite3_stmt *stmt) {
   uint32_t ret;
   char *err_msg = NULL;

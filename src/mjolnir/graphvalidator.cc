@@ -78,7 +78,8 @@ bool ShapesMatch(const std::vector<PointLL>& shape1,
 // Get the GraphId of the opposing edge.
 uint32_t GetOpposingEdgeIndex(const GraphId& startnode, DirectedEdge& edge,
                               uint64_t wayid, const GraphTile* tile, const GraphTile* end_tile,
-                              uint32_t& dupcount, std::string& endnodeiso) {
+                              uint32_t& dupcount, std::string& endnodeiso,
+                              bool& deadend) {
 
   if (!end_tile) {
     LOG_WARN("End tile invalid.")
@@ -91,6 +92,9 @@ uint32_t GetOpposingEdgeIndex(const GraphId& startnode, DirectedEdge& edge,
 
   // Set the end node iso.  Used for country crossings.
   endnodeiso = end_tile->admin(nodeinfo->admin_index())->country_iso();
+
+  // Set the deadend flag (TODO - do we need to worry about driveability)
+  deadend = nodeinfo->intersection() == IntersectionType::kDeadEnd;
 
   // Get the directed edges and return when the end node matches
   // the specified node and length / transit attributes matches
@@ -112,7 +116,7 @@ uint32_t GetOpposingEdgeIndex(const GraphId& startnode, DirectedEdge& edge,
     // transit edges and wayid matching
     if (startnode.level() == 2) {
       if (edge.use() == Use::kTransitConnection && directededge->use() == Use::kTransitConnection) {
-        if (tile->edgeinfo(edge.edgeinfo_offset())->wayid() == end_tile->edgeinfo(directededge->edgeinfo_offset())->wayid()) {
+        if (tile->edgeinfo(edge.edgeinfo_offset()).wayid() == end_tile->edgeinfo(directededge->edgeinfo_offset()).wayid()) {
           opp_index = i;
         }
       }
@@ -127,7 +131,7 @@ uint32_t GetOpposingEdgeIndex(const GraphId& startnode, DirectedEdge& edge,
           // Match wayids and length. Also need to match edge info offset
           // or shape (if not in same tile)
           wayid2 = (directededge->trans_down() || directededge->trans_up()) ?
-                0 : end_tile->edgeinfo(directededge->edgeinfo_offset())->wayid();
+                0 : end_tile->edgeinfo(directededge->edgeinfo_offset()).wayid();
           if (wayid == wayid2 &&
               edge.length() == directededge->length()) {
             if (sametile) {
@@ -137,8 +141,8 @@ uint32_t GetOpposingEdgeIndex(const GraphId& startnode, DirectedEdge& edge,
               }
             } else {
               // Get shape for the edges
-              auto shape1 = tile->edgeinfo(edge.edgeinfo_offset())->shape();
-              auto shape2 = end_tile->edgeinfo(directededge->edgeinfo_offset())->shape();
+              auto shape1 = tile->edgeinfo(edge.edgeinfo_offset()).shape();
+              auto shape2 = end_tile->edgeinfo(directededge->edgeinfo_offset()).shape();
               if (ShapesMatch(shape1, shape2)) {
                 match = true;
               }
@@ -173,7 +177,7 @@ uint32_t GetOpposingEdgeIndex(const GraphId& startnode, DirectedEdge& edge,
         }
       }
       if (edge.use() == Use::kTransitConnection && directededge->use() == Use::kTransitConnection) {
-        if (tile->edgeinfo(edge.edgeinfo_offset())->wayid() == end_tile->edgeinfo(directededge->edgeinfo_offset())->wayid()) {
+        if (tile->edgeinfo(edge.edgeinfo_offset()).wayid() == end_tile->edgeinfo(directededge->edgeinfo_offset()).wayid()) {
           opp_index = i;
         }
       }
@@ -363,12 +367,14 @@ void validate(const boost::property_tree::ptree& pt,
 
           // Set the opposing edge index and get the country ISO at the
           // end node)
+          bool deadend = false;
           std::string end_node_iso;
           uint64_t wayid = (directededge.trans_down() || directededge.trans_up()) ?
-                 0 : tile->edgeinfo(directededge.edgeinfo_offset())->wayid();
+                 0 : tile->edgeinfo(directededge.edgeinfo_offset()).wayid();
           uint32_t opp_index = GetOpposingEdgeIndex(node, directededge,
-                                                    wayid, tile, endnode_tile, dupcount, end_node_iso);
+                 wayid, tile, endnode_tile, dupcount, end_node_iso, deadend);
           directededge.set_opp_index(opp_index);
+          directededge.set_deadend(deadend);
 
           if (directededge.use() == Use::kTransitConnection)
               directededge.set_opp_local_idx(opp_index);
@@ -489,7 +495,8 @@ namespace mjolnir {
   void GraphValidator::Validate(const boost::property_tree::ptree& pt) {
 
     // Graphreader
-    TileHierarchy hierarchy(pt.get<std::string>("mjolnir.tile_dir"));
+    auto hierarchy_properties = pt.get_child("mjolnir");
+    TileHierarchy hierarchy(hierarchy_properties.get<std::string>("tile_dir"));
     // Make sure there are at least 2 levels!
     auto numHierarchyLevels = hierarchy.levels().size();
     if (numHierarchyLevels < 2)
@@ -503,7 +510,7 @@ namespace mjolnir {
       for (uint32_t id = 0; id < tiles.TileCount(); id++) {
         // If tile exists add it to the queue
         GraphId tile_id(id, level, 0);
-        if (GraphReader::DoesTileExist(hierarchy, tile_id)) {
+        if (GraphReader::DoesTileExist(hierarchy_properties, tile_id)) {
           tilequeue.emplace_back(std::move(tile_id));
         }
       }
@@ -514,7 +521,7 @@ namespace mjolnir {
         for (uint32_t id = 0; id < tiles.TileCount(); id++) {
           // If tile exists add it to the queue
           GraphId tile_id(id, level, 0);
-          if (GraphReader::DoesTileExist(hierarchy, tile_id)) {
+          if (GraphReader::DoesTileExist(hierarchy_properties, tile_id)) {
             tilequeue.emplace_back(std::move(tile_id));
           }
         }

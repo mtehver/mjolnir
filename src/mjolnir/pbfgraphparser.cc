@@ -42,7 +42,7 @@ struct graph_callback : public OSMPBF::Callback {
 
   graph_callback(const boost::property_tree::ptree& pt, OSMData& osmdata) :
     shape_(kMaxOSMNodeId), intersection_(kMaxOSMNodeId), tile_hierarchy_(pt.get<std::string>("tile_dir")),
-    osmdata_(osmdata), lua_(std::string(lua_graph_lua, lua_graph_lua + lua_graph_lua_len)){
+    osmdata_(osmdata), lua_(get_lua(pt)){
 
     current_way_node_index_ = last_node_ = last_way_ = last_relation_ = 0;
 
@@ -53,6 +53,19 @@ struct graph_callback : public OSMPBF::Callback {
       }
     }
 
+  }
+
+  static std::string get_lua(const boost::property_tree::ptree& pt) {
+    auto graph_lua_name = pt.get_optional<std::string>("graph_lua_name");
+    if (graph_lua_name) {
+      LOG_INFO("Using LUA script: " + *graph_lua_name);
+      std::ifstream lua(*graph_lua_name);
+      if (!lua.is_open())
+        throw std::runtime_error("Failed to open: " + *graph_lua_name);
+      return std::string((std::istreambuf_iterator<char>(lua)),
+        std::istreambuf_iterator<char>());
+    }
+    return std::string(lua_graph_lua, lua_graph_lua + lua_graph_lua_len);
   }
 
   void node_callback(uint64_t osmid, double lng, double lat, const OSMPBF::Tags &tags) {
@@ -318,6 +331,22 @@ struct graph_callback : public OSMPBF::Callback {
         has_user_tags = true;
       }
 
+      else if (tag.first == "wheelchair") {
+        w.set_wheelchair_tag(true);
+        w.set_wheelchair(tag.second == "true" ? true : false);
+      }
+
+      else if (tag.first == "sidewalk") {
+        if (tag.second == "both" || tag.second == "yes" ||
+            tag.second == "shared" || tag.second == "raised") {
+          w.set_sidewalk_left(true);
+          w.set_sidewalk_right(true);
+        } else if (tag.second == "left")
+          w.set_sidewalk_left(true);
+        else if (tag.second == "right")
+          w.set_sidewalk_right(true);
+      }
+
       else if (tag.first == "auto_forward")
         w.set_auto_forward(tag.second == "true" ? true : false);
       else if (tag.first == "truck_forward")
@@ -351,6 +380,9 @@ struct graph_callback : public OSMPBF::Callback {
             break;
           case Use::kFootway:
             w.set_use(Use::kFootway);
+            break;
+          case Use::kSidewalk:
+            w.set_use(Use::kSidewalk);
             break;
           case Use::kPedestrian:
             w.set_use(Use::kPedestrian);
@@ -401,6 +433,8 @@ struct graph_callback : public OSMPBF::Callback {
         w.set_roundabout(tag.second == "true" ? true : false);
       else if (tag.first == "link")
         w.set_link(tag.second == "true" ? true : false);
+      else if (tag.first == "link_type")
+        w.set_turn_channel(tag.second == "slip" ? true : false);
       else if (tag.first == "ferry")
         w.set_ferry(tag.second == "true" ? true : false);
       else if (tag.first == "rail")
@@ -637,6 +671,7 @@ struct graph_callback : public OSMPBF::Callback {
           switch (w.use()) {
           case Use::kFootway:
           case Use::kPedestrian:
+          case Use::kSidewalk:
           case Use::kPath:
           case Use::kBridleway:
             w.set_surface(Surface::kCompacted);

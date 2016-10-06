@@ -24,7 +24,7 @@
 #include <valhalla/baldr/graphtile.h>
 #include <valhalla/baldr/datetime.h>
 #include <valhalla/baldr/graphreader.h>
-#include <valhalla/midgard/util.h>
+#include <valhalla/midgard/encoded.h>
 
 #include "mjolnir/graphtilebuilder.h"
 #include "proto/transit.pb.h"
@@ -55,6 +55,7 @@ struct Departure {
   float    dest_dist_traveled;
   uint16_t elapsed_time;
   bool     wheelchair_accessible;
+  bool     bicycle_accessible;
 };
 
 // Unique route and stop
@@ -191,6 +192,10 @@ std::priority_queue<weighted_tile_t> which_tiles(const ptree& pt) {
   curler_t curler;
   auto feeds = curler(url("/api/v1/feeds.geojson?", pt), "features");
   for(const auto& feature : feeds.get_child("features")) {
+    //use the following logic if you only want certain feeds
+  //auto feed = feature.second.get_optional<std::string>("properties.onestop_id");
+  //if (feed && *feed == "f-drt-mbta") {
+
     //should be a polygon
     auto type = feature.second.get_optional<std::string>("geometry.type");
     if(!type || *type != "Polygon") {
@@ -276,7 +281,7 @@ void get_stops(Transit& tile, std::unordered_map<std::string, uint64_t>& stops,
     stop->set_lat(lat);
     set_no_null(std::string, stop_pt.second, "onestop_id", "null", stop->set_onestop_id);
     set_no_null(std::string, stop_pt.second, "name", "null", stop->set_name);
-    stop->set_wheelchair_boarding(stop_pt.second.get<bool>("tags.wheelchair_boarding", false));
+    stop->set_wheelchair_boarding(stop_pt.second.get<bool>("wheelchair_boarding", true));
     set_no_null(uint64_t, stop_pt.second, "tags.osm_way_id", 0, stop->set_osm_way_id);
     GraphId stop_id = tile_id;
     stop_id.fields.id = stops.size();
@@ -298,13 +303,14 @@ void get_routes(Transit& tile, std::unordered_map<std::string, size_t>& routes,
     set_no_null(std::string, route_pt.second, "onestop_id", "null", route->set_onestop_id);
     std::string vehicle_type = route_pt.second.get<std::string>("vehicle_type", "null");
     Transit_VehicleType type = Transit_VehicleType::Transit_VehicleType_kRail;
-    if (vehicle_type == "tram")
+    if (vehicle_type == "tram" || vehicle_type == "tram_service")
       type = Transit_VehicleType::Transit_VehicleType_kTram;
     else if (vehicle_type == "metro")
       type = Transit_VehicleType::Transit_VehicleType_kMetro;
     else if (vehicle_type == "rail")
       type = Transit_VehicleType::Transit_VehicleType_kRail;
-    else if (vehicle_type == "bus" || vehicle_type == "trolleybus_service" || vehicle_type == "express_bus_service")
+    else if (vehicle_type == "bus" || vehicle_type == "trolleybus_service" ||
+             vehicle_type == "express_bus_service" || vehicle_type == "local_bus_service")
       type = Transit_VehicleType::Transit_VehicleType_kBus;
     else if (vehicle_type == "ferry")
       type = Transit_VehicleType::Transit_VehicleType_kFerry;
@@ -471,7 +477,7 @@ bool get_stop_pairs(Transit& tile, unique_transit_t& uniques, const std::unorder
       uniques.lock.unlock();
     }
 
-    pair->set_wheelchair_accessible(pair_pt.second.get<bool>("wheelchair_accessible", false));
+    pair->set_wheelchair_accessible(pair_pt.second.get<bool>("wheelchair_accessible", true));
 
     set_no_null(std::string, pair_pt.second, "trip_headsign", "null", pair->set_trip_headsign);
     pair->set_bikes_allowed(pair_pt.second.get<bool>("bikes_allowed", false));
@@ -880,7 +886,7 @@ std::unordered_multimap<GraphId, Departure> ProcessStopPairs(
     GraphTileBuilder& transit_tilebuilder,
     const uint32_t tile_date,
     const Transit& transit,
-    std::unordered_map<GraphId, bool>& stop_access,
+    std::unordered_map<GraphId, uint16_t>& stop_access,
     const std::string& file,
     const GraphId& tile_id, std::mutex& lock) {
   // Check if there are no schedule stop pairs in this tile
@@ -950,11 +956,18 @@ std::unordered_multimap<GraphId, Departure> ProcessStopPairs(
           dep.dep_time = sp.origin_departure_time();
           dep.elapsed_time = sp.destination_arrival_time() - dep.dep_time;
 
-          // Set bikes_allowed on the stops
-          // TODO - should this be |= ???
-          bool bikes_allowed = sp.bikes_allowed();
-          stop_access[dep.orig_pbf_graphid] = bikes_allowed;
-          stop_access[dep.dest_pbf_graphid] = bikes_allowed;
+          if (!sp.bikes_allowed()) {
+            stop_access[dep.orig_pbf_graphid] |= kBicycleAccess;
+            stop_access[dep.dest_pbf_graphid] |= kBicycleAccess;
+          }
+
+          if (!sp.wheelchair_accessible()) {
+            stop_access[dep.orig_pbf_graphid] |= kWheelchairAccess;
+            stop_access[dep.dest_pbf_graphid] |= kWheelchairAccess;
+          }
+
+          dep.bicycle_accessible = sp.bikes_allowed();
+          dep.wheelchair_accessible = sp.wheelchair_accessible();
 
           // Compute days of week mask
           uint32_t dow_mask = kDOWNone;
@@ -1223,7 +1236,7 @@ void AddToGraph(GraphTileBuilder& tilebuilder_transit,
                 std::mutex& lock,
                 const std::unordered_set<GraphId>& all_tiles,
                 const std::map<GraphId, StopEdges>& stop_edge_map,
-                const std::unordered_map<GraphId, bool>& stop_access,
+                const std::unordered_map<GraphId, uint16_t>& stop_access,
                 const std::unordered_map<uint32_t, Shape> shape_data,
                 const std::vector<float> distances,
                 const std::vector<uint32_t>& route_types,
@@ -1254,20 +1267,17 @@ void AddToGraph(GraphTileBuilder& tilebuilder_transit,
     GraphId origin_node = GetGraphId(stopid, all_tiles);
 
     // Build the node info. Use generic transit stop type
-    uint32_t access = kPedestrianAccess;
-    /** TODO bicycle access
-    auto s_access = stop_access.find(stop.pbf_graphid);
-    if (s_access != stop_access.end()) {
-      if (s_access->second)
-        access |= kBicycleAccess;
-    }
-    **/
+    uint32_t n_access = (kPedestrianAccess | kWheelchairAccess | kBicycleAccess);
 
+    auto s_access = stop_access.find(stopid);
+    if (s_access != stop_access.end()) {
+      n_access &= ~s_access->second;
+    }
     // TODO - parent/child flags
     bool child  = false; // (stop.parent.Is_Valid());  // TODO verify if this is sufficient
     bool parent = false; // (stop.type == 1);          // TODO verify if this is sufficient
     PointLL stopll = { stop.lon(), stop.lat() };
-    NodeInfo node(stopll, RoadClass::kServiceOther, access,
+    NodeInfo node(stopll, RoadClass::kServiceOther, n_access,
                         NodeType::kMultiUseTransitStop, false);
     node.set_child(child);
     node.set_parent(parent);
@@ -1366,8 +1376,8 @@ void AddToGraph(GraphTileBuilder& tilebuilder_transit,
       directededge.set_speed(5);
       directededge.set_classification(RoadClass::kServiceOther);
       directededge.set_localedgeidx(tilebuilder_transit.directededges().size() - node.edge_index());
-      directededge.set_forwardaccess(kPedestrianAccess);  // TODO - bikes?
-      directededge.set_reverseaccess(kPedestrianAccess);  // TODO - bikes?
+      directededge.set_forwardaccess((kPedestrianAccess | kWheelchairAccess | kBicycleAccess));
+      directededge.set_reverseaccess((kPedestrianAccess | kWheelchairAccess | kBicycleAccess));
       directededge.set_lineid(transitedge.lineid);
 
       LOG_DEBUG("Add transit directededge - lineId = " + std::to_string(transitedge.lineid) +
@@ -1481,9 +1491,13 @@ void build_tiles(const boost::property_tree::ptree& pt, std::mutex& lock,
 
     lock.unlock();
 
+    std::unordered_map<GraphId, uint16_t> stop_access;
     std::unordered_multimap<GraphId, GraphId> children;
     for (uint32_t i = 0; i < transit.stops_size(); i++) {
       const Transit_Stop& stop = transit.stops(i);
+
+      if (!stop.wheelchair_boarding())
+        stop_access[GraphId(stop.graphid())] |= kWheelchairAccess;
 
       // Store stop information in TransitStops
       tilebuilder_transit.AddTransitStop( { tilebuilder_transit.AddName(stop.onestop_id()),
@@ -1531,7 +1545,6 @@ void build_tiles(const boost::property_tree::ptree& pt, std::mutex& lock,
     // Create a map of stop key to index in the stop vector
 
     // Process schedule stop pairs (departures)
-    std::unordered_map<GraphId, bool> stop_access;
     std::unordered_multimap<GraphId, Departure> departures =
                 ProcessStopPairs(tilebuilder_transit,tile_creation_date,
                                  transit, stop_access, file, tile_id, lock);
@@ -1580,7 +1593,8 @@ void build_tiles(const boost::property_tree::ptree& pt, std::mutex& lock,
         // Form transit departures
         TransitDeparture td(lineid, dep.trip, dep.route,
                     dep.blockid, dep.headsign_offset, dep.dep_time,
-                    dep.elapsed_time, dep.schedule_index);
+                    dep.elapsed_time, dep.schedule_index,
+                    dep.wheelchair_accessible, dep.bicycle_accessible);
         tilebuilder_transit.AddTransitDeparture(std::move(td));
       }
 

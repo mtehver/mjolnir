@@ -628,6 +628,54 @@ struct OSMWay {
   bool hov() const;
 
   /**
+   * Set wheelchair flag.
+   * @param  wheelchair   Is this wheelchair?
+   */
+  void set_wheelchair(const bool wheelchair);
+
+  /**
+   * Get the wheelchair flag.
+   * @return  Returns wheelchair flag.
+   */
+  bool wheelchair() const;
+
+  /**
+   * Set wheelchair_tag flag.
+   * @param  wheelchair_tag   Did the user set the wheelchair_tag?
+   */
+  void set_wheelchair_tag(const bool wheelchair_tag);
+
+  /**
+   * Get the wheelchair_tag flag.
+   * @return  Returns wheelchair_tag flag.
+   */
+  bool wheelchair_tag() const;
+
+  /**
+   * Set sidewalk_left flag.
+   * @param  sidewalk_left   Is there a sidewalk on the left?
+   */
+  void set_sidewalk_left(const bool sidewalk_left);
+
+  /**
+   * Get the sidewalk_left flag.
+   * @return  Returns sidewalk_left flag.
+   */
+  bool sidewalk_left() const;
+
+  /**
+   * Set sidewalk_right flag.
+   * @param  sidewalk_right   Is there a sidewalk on the right?
+   */
+  void set_sidewalk_right(const bool sidewalk_right);
+
+  /**
+   * Get the sidewalk_right flag.
+   * @return  Returns sidewalk_right flag.
+   */
+  bool sidewalk_right() const;
+
+  /**
    * Set drive_on_right flag.
    * @param  drive_on_right   Is a country that we drive on the right?
    */
@@ -786,6 +834,18 @@ struct OSMWay {
   bool link() const;
 
   /**
+   * Sets the turn channel tag.
+   * @param  turn channel       Turn channel.
+   */
+  void set_turn_channel(const bool turn_channel);
+
+  /**
+   * Get the turn channel flag.
+   * @return  Returns turn channel flag.
+   */
+  bool turn_channel() const;
+
+  /**
    * Get the names for the edge info based on the road class.
    * @param  ref              updated refs from relations.
    * @param  ref_offset_map   map of unique refs from ways.
@@ -848,7 +908,9 @@ struct OSMWay {
       uint32_t forward_tagged_lanes   :1;
       uint32_t backward_tagged_lanes  :1;
       uint32_t truck_route            :1;
-      uint32_t spare                  :3;
+      uint32_t sidewalk_right         :1;
+      uint32_t sidewalk_left          :1;
+      uint32_t spare                  :1;
     } fields;
     uint32_t v;
   };
@@ -862,7 +924,8 @@ struct OSMWay {
       uint32_t lanes             :4;
       uint32_t forward_lanes     :4;
       uint32_t backward_lanes    :4;
-      uint32_t spare             :10;    // Spare
+      uint32_t turn_channel      :1;     // *link tag - turn channel (no ramp)
+      uint32_t spare             :9;     // Spare
     } fields;
     uint32_t v;
   };
@@ -885,7 +948,8 @@ struct OSMWay {
       uint16_t emergency_backward :1;
       uint16_t pedestrian         :1;
       uint16_t has_user_tags      :1;
-      uint16_t spare              :2;
+      uint16_t wheelchair         :1;
+      uint16_t wheelchair_tag     :1;
     } fields;
     uint16_t v;
   };

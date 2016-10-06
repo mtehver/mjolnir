@@ -8,6 +8,8 @@ using namespace valhalla::baldr;
 namespace valhalla {
 namespace mjolnir {
 
+constexpr uint32_t kMinimumEdgeLength = 1;
+
 // Constructor with parameters
 DirectedEdgeBuilder::DirectedEdgeBuilder(
                    const OSMWay& way, const GraphId& endnode,
@@ -18,10 +20,12 @@ DirectedEdgeBuilder::DirectedEdgeBuilder(
                    const uint32_t restrictions, const uint32_t bike_network)
      :  DirectedEdge() {
   set_endnode(endnode);
-  set_length(length);
   set_use(use);
-  set_speed(speed);    // KPH
+  set_speed(speed);             // KPH
   set_truck_speed(truck_speed); // KPH
+
+  // Protect against 0 length edges
+  set_length(std::max(length, kMinimumEdgeLength));
 
   // Override use for ferries/rail ferries. TODO - set this in lua
   if (way.ferry()) {
@@ -53,6 +57,9 @@ DirectedEdgeBuilder::DirectedEdgeBuilder(
   set_localedgeidx(localidx);
   set_restrictions(restrictions);
   set_traffic_signal(signal);
+
+  set_sidewalk_left(way.sidewalk_left());
+  set_sidewalk_right(way.sidewalk_right());
 
   set_speed_type(way.tagged_speed() ?
         SpeedType::kTagged : SpeedType::kClassified);
@@ -104,6 +111,12 @@ DirectedEdgeBuilder::DirectedEdgeBuilder(
   if (way.pedestrian()) {
     forward_access |= kPedestrianAccess;
     reverse_access |= kPedestrianAccess;
+  }
+  if (way.use() != Use::kSteps &&
+      ((way.wheelchair_tag() && way.wheelchair()) ||
+          (!way.wheelchair_tag() && way.pedestrian()))) {
+      forward_access |= kWheelchairAccess;
+      reverse_access |= kWheelchairAccess;
   }
 
   // Set access modes

@@ -11,6 +11,7 @@
 
 #include <valhalla/midgard/pointll.h>
 #include <valhalla/midgard/logging.h>
+#include <valhalla/midgard/encoded.h>
 #include <valhalla/baldr/tilehierarchy.h>
 #include <valhalla/baldr/graphid.h>
 #include <valhalla/baldr/graphconstants.h>
@@ -34,6 +35,9 @@ namespace {
 
 //how many meters to resample shape to when checking elevations
 constexpr double POSTING_INTERVAL = 60.0;
+
+// Do not compute grade for intervals less than 10 meters.
+constexpr double kMinimumInterval = 10.0f;
 
 // Simple structure to describe a connection between 2 levels
 struct NodeConnection {
@@ -323,7 +327,7 @@ uint32_t ConnectEdges(const GraphId& basenode,
   restrictions = directededge->restrictions();
 
   // Get the shape for this edge. Reverse if directed edge is not forward.
-  auto encoded = tile->edgeinfo(directededge->edgeinfo_offset())->encoded_shape();
+  auto encoded = tile->edgeinfo(directededge->edgeinfo_offset()).encoded_shape();
   std::list<PointLL> edgeshape = valhalla::midgard::decode7<std::list<PointLL> >(encoded);
   if (!directededge->forward()) {
     std::reverse(edgeshape.begin(), edgeshape.end());
@@ -352,7 +356,13 @@ bool IsEnteringEdgeOfContractedNode(const GraphId& node, const GraphId& edge,
   }
 }
 
-uint32_t GetGrade(const std::unique_ptr<const valhalla::skadi::sample>& sample, const std::list<PointLL>& shape, const float length, const bool forward) {
+std::tuple<double, double, double> GetGrade(const std::unique_ptr<const valhalla::skadi::sample>& sample,
+                    const std::list<PointLL>& shape, const float length, const bool forward) {
+  // For very short lengths just return 0 grades
+  if (length < kMinimumInterval) {
+    return std::make_tuple(0.0, 0.0, 0.0);
+  }
+
   //evenly sample the shape
   std::list<PointLL> resampled;
   //if it was really short just do both ends
@@ -368,7 +378,7 @@ uint32_t GetGrade(const std::unique_ptr<const valhalla::skadi::sample>& sample, 
   if(!forward)
     std::reverse(heights.begin(), heights.end());
   //compute the grade valid range is between -10 and +15
-  return static_cast<uint32_t>((valhalla::skadi::weighted_grade(heights, interval) + 10.0) / 25.0 + .5);
+  return valhalla::skadi::weighted_grade(heights, interval);
 }
 
 // Add shortcut edges (if they should exist) from the specified node
@@ -422,8 +432,8 @@ std::pair<uint32_t, uint32_t> AddShortcutEdges(
       // Get the shape for this edge. If this initial directed edge is not
       // forward - reverse the shape so the edge info stored is forward for
       // the first added edge info
-      std::unique_ptr<const EdgeInfo> edgeinfo = tile->edgeinfo(directededge->edgeinfo_offset());
-      std::list<PointLL> shape = valhalla::midgard::decode7<std::list<PointLL> >(edgeinfo->encoded_shape());
+      auto edgeinfo = tile->edgeinfo(directededge->edgeinfo_offset());
+      std::list<PointLL> shape = valhalla::midgard::decode7<std::list<PointLL> >(edgeinfo.encoded_shape());
       if (!directededge->forward())
         std::reverse(shape.begin(), shape.end());
 
@@ -509,7 +519,16 @@ std::pair<uint32_t, uint32_t> AddShortcutEdges(
 
       // Update the length, elevation, curvature, restriction, and end node
       newedge.set_length(length);
-      newedge.set_weighted_grade(sample ? GetGrade(sample, shape, length, forward) : 6); //6 is flat
+      if (sample) {
+        auto grades = GetGrade(sample, shape, length, forward);
+        newedge.set_weighted_grade(static_cast<uint32_t>(std::get<0>(grades) * .6 + 6.5));
+        newedge.set_max_up_slope(std::get<1>(grades));
+        newedge.set_max_down_slope(std::get<2>(grades));
+      } else {
+        newedge.set_weighted_grade(6);  // 6 is flat
+        newedge.set_max_up_slope(0.0f);
+        newedge.set_max_down_slope(0.0f);
+      }
       newedge.set_curvature(0); //TODO:
       newedge.set_endnode(nodeb);
       newedge.set_restrictions(rst);
@@ -648,10 +667,9 @@ std::pair<uint32_t, uint32_t> FormTilesInNewLevel(
           // Get edge info, shape, and names from the old tile and add
           // to the new. Use edge length to protect against
           // edges that have same end nodes but different lengths
-          std::unique_ptr<const EdgeInfo> edgeinfo = tile->edgeinfo(
-                              directededge->edgeinfo_offset());
+          auto edgeinfo = tile->edgeinfo(directededge->edgeinfo_offset());
           edge_info_offset = tilebuilder.AddEdgeInfo(directededge->length(),
-                             nodea, nodeb, edgeinfo->wayid(), edgeinfo->shape(),
+                             nodea, nodeb, edgeinfo.wayid(), edgeinfo.shape(),
                              tile->GetNames(directededge->edgeinfo_offset()),
                              added);
           newedge.set_edgeinfo_offset(edge_info_offset);

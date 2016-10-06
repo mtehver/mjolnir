@@ -114,6 +114,8 @@ void ConnectToGraph(GraphTileBuilder& tilebuilder_local,
                 const TileHierarchy& hierarchy_transit,
                 const std::string& transit_dir,
                 const GraphTile* tile,
+                GraphReader& reader_transit_level,
+                std::mutex& lock,
                 const std::unordered_set<GraphId>& tiles,
                 const std::vector<OSMConnectionEdge>& connection_edges) {
   auto t1 = std::chrono::high_resolution_clock::now();
@@ -183,6 +185,7 @@ void ConnectToGraph(GraphTileBuilder& tilebuilder_local,
     // Add directed edges for any connections from the OSM node
     // to a transit stop
     // level 2
+    const GraphTile* end_tile = nullptr;
     while (added_edges < connection_edges.size() &&
            connection_edges[added_edges].osm_node.id() == nodeid) {
       const OSMConnectionEdge& conn = connection_edges[added_edges];
@@ -193,6 +196,14 @@ void ConnectToGraph(GraphTileBuilder& tilebuilder_local,
         continue;
       }
 
+      if (!end_tile || (end_tile->id().Tile_Base() != endnode.Tile_Base())) {
+        lock.lock();
+        end_tile = reader_transit_level.GetGraphTile(endnode);
+        lock.unlock();
+      }
+      //use the access from the transit end node
+      const auto& tc_access = end_tile->node(endnode)->access();
+
       DirectedEdge directededge;
       directededge.set_endnode(endnode);
       directededge.set_length(conn.length);
@@ -200,8 +211,8 @@ void ConnectToGraph(GraphTileBuilder& tilebuilder_local,
       directededge.set_speed(5);
       directededge.set_classification(RoadClass::kServiceOther);
       directededge.set_localedgeidx(tilebuilder_local.directededges().size() - edge_index);
-      directededge.set_forwardaccess(kPedestrianAccess);  // TODO - bikes?
-      directededge.set_reverseaccess(kPedestrianAccess);  // TODO - bikes?
+      directededge.set_forwardaccess(tc_access);
+      directededge.set_reverseaccess(tc_access);
 
       // Add edge info to the tile and set the offset in the directed edge
       bool added = false;
@@ -276,17 +287,8 @@ void ConnectToGraph(GraphTileBuilder& tilebuilder_local,
         if (!origin_node.Is_Valid()) {
           continue;
         }
-
-        // Build the node info. Use generic transit stop type
-        uint32_t access = kPedestrianAccess;
-        /** TODO bicycle access
-        auto s_access = stop_access.find(stop.pbf_graphid);
-        if (s_access != stop_access.end()) {
-          if (s_access->second)
-            access |= kBicycleAccess;
-        }
-        **/
-
+        //use the access from the transit node
+        const auto& tc_access = nb.access();
         DirectedEdge directededge;
         directededge.set_endnode(conn.osm_node);
         directededge.set_length(conn.length);
@@ -294,8 +296,8 @@ void ConnectToGraph(GraphTileBuilder& tilebuilder_local,
         directededge.set_speed(5);
         directededge.set_classification(RoadClass::kServiceOther);
         directededge.set_localedgeidx(tilebuilder_transit.directededges().size() - edge_index);
-        directededge.set_forwardaccess(kPedestrianAccess);  // TODO - bikes?
-        directededge.set_reverseaccess(kPedestrianAccess);  // TODO - bikes?
+        directededge.set_forwardaccess(tc_access);
+        directededge.set_reverseaccess(tc_access);
 
         // Add edge info to the tile and set the offset in the directed edge
         bool added = false;
@@ -327,6 +329,9 @@ void ConnectToGraph(GraphTileBuilder& tilebuilder_local,
     }
     // Add the node and directed edges
     nb.set_edge_index(edge_index);
+
+    //reset the access to defaults.
+    nb.set_access((kPedestrianAccess | kWheelchairAccess | kBicycleAccess));
     nb.set_edge_count(tilebuilder_transit.directededges().size() - edge_index);
     tilebuilder_transit.nodes().emplace_back(std::move(nb));
   }
@@ -350,7 +355,6 @@ void ConnectToGraph(GraphTileBuilder& tilebuilder_local,
 // Add connection edges from the transit stop to an OSM edge
 void AddOSMConnection(const Transit_Stop& stop, const GraphTile* tile,
                       const TileHierarchy& tilehierarchy,
-                      GraphReader& reader,
                       std::mutex& lock,
                       std::vector<OSMConnectionEdge>& connection_edges) {
   PointLL stop_ll = {stop.lon(), stop.lat() };
@@ -368,14 +372,14 @@ void AddOSMConnection(const Transit_Stop& stop, const GraphTile* tile,
       const DirectedEdge* directededge = tile->directededge(node->edge_index() + j);
       auto edgeinfo = tile->edgeinfo(directededge->edgeinfo_offset());
 
-      if (edgeinfo->wayid() == wayid) {
+      if (edgeinfo.wayid() == wayid) {
 
         // Get shape and find closest point
-        auto this_shape = edgeinfo->shape();
+        auto this_shape = edgeinfo.shape();
         auto this_closest = stop_ll.ClosestPoint(this_shape);
 
         // Get names
-        names = edgeinfo->GetNames();
+        names = edgeinfo.GetNames();
 
         if (std::get<1>(this_closest) < mindist) {
           startnode.Set(tile->header()->graphid().tileid(),
@@ -546,7 +550,7 @@ void build(const std::string& transit_dir,
 
       // Form connections to the stop
       // TODO - deal with hierarchy (only connect egress locations)
-      AddOSMConnection(stop, local_tile, hierarchy_local_level, reader_local_level, lock, connection_edges);
+      AddOSMConnection(stop, local_tile, hierarchy_local_level, lock, connection_edges);
 
       /** TODO - parent/child relationships
       if (stop.type == 0 && stop.parent.Is_Valid()) {
@@ -563,8 +567,8 @@ void build(const std::string& transit_dir,
 
     // Connect the transit graph to the route graph
     ConnectToGraph(tilebuilder_local, hierarchy_local_level, tilebuilder_transit,
-                   hierarchy_transit_level, transit_dir, local_tile,
-                   tiles, connection_edges);
+                   hierarchy_transit_level, transit_dir, local_tile, reader_transit_level,
+                   lock, tiles, connection_edges);
 
     // Write the new file
     lock.lock();
@@ -596,14 +600,15 @@ void TransitBuilder::Build(const boost::property_tree::ptree& pt) {
   std::unordered_set<GraphId> tiles;
 
   // Bail if nothing
-  auto transit_dir = pt.get_optional<std::string>("mjolnir.transit_dir");
+  auto hierarchy_properties = pt.get_child("mjolnir");
+  auto transit_dir = hierarchy_properties.get_optional<std::string>("transit_dir");
   if(!transit_dir || !boost::filesystem::exists(*transit_dir) || !boost::filesystem::is_directory(*transit_dir)) {
     LOG_INFO("Transit directory not found. Transit will not be added.");
     return;
   }
   // Also bail if nothing inside
   transit_dir->push_back('/');
-  GraphReader reader(pt.get_child("mjolnir"));
+  GraphReader reader(hierarchy_properties);
   const auto& hierarchy = reader.GetTileHierarchy();
   auto local_level = hierarchy.levels().rbegin()->first;
   if(boost::filesystem::is_directory(*transit_dir + std::to_string(local_level + 1) + "/")) {
@@ -613,7 +618,7 @@ void TransitBuilder::Build(const boost::property_tree::ptree& pt) {
         auto graph_id = TransitToTile(pt, transit_file_itr->path().string());
         auto local_graph_id = graph_id;
         local_graph_id.fields.level -= 1;
-        if(GraphReader::DoesTileExist(hierarchy, local_graph_id)) {
+        if(GraphReader::DoesTileExist(hierarchy_properties, local_graph_id)) {
           const GraphTile* tile = reader.GetGraphTile(local_graph_id);
           tiles.emplace(local_graph_id);
           const std::string destination_path = pt.get<std::string>("mjolnir.tile_dir") + '/' + GraphTile::FileSuffix(graph_id, hierarchy);

@@ -36,7 +36,10 @@ using namespace valhalla::mjolnir;
 namespace {
 
 //how many meters to resample shape to when checking elevations
-constexpr double POSTING_INTERVAL = 60.0;
+constexpr double POSTING_INTERVAL = 60;
+
+// Do not compute grade for intervals less than 10 meters.
+constexpr double kMinimumInterval = 10.0f;
 
 /**
  * we need the nodes to be sorted by graphid and then by osmid to make a set of tiles
@@ -386,7 +389,8 @@ void BuildTileSet(const std::string& ways_file, const std::string& way_nodes_fil
 
   // Lots of times in a given tile we may end up accessing the same
   // shape/attributes twice we avoid doing this by caching it here
-  std::unordered_map<uint32_t, std::tuple<uint32_t, uint32_t, uint32_t, uint32_t> > geo_attribute_cache;
+  std::unordered_map<uint32_t, std::tuple<uint32_t, uint32_t, uint32_t, uint32_t,
+                        float, float, float, float> > geo_attribute_cache;
 
   ////////////////////////////////////////////////////////////////////////////
   // Iterate over tiles
@@ -601,34 +605,46 @@ void BuildTileSet(const std::string& ways_file, const std::string& way_nodes_fil
             //length
             auto length = valhalla::midgard::length(shape);
 
-            //grade estimation
-            uint32_t forward_grade = 6, reverse_grade = 6;
-            if(sample && !w.tunnel()) {
-              //evenly sample the shape
-              std::list<PointLL> resampled;
-              //if it is really short or a bridge just do both ends
-              auto interval = POSTING_INTERVAL;
-              if(length < POSTING_INTERVAL * 3 || w.bridge()) {
-                resampled = {shape.front(), shape.back()};
-                interval = length;
+            // Grade estimation and max slopes
+            std::tuple<double,double,double> forward_grades(0.0, 0.0, 0.0);
+            std::tuple<double,double,double> reverse_grades(0.0, 0.0, 0.0);
+            if(sample && !w.tunnel() && !w.ferry()) {
+              // Skip very short edges
+              if (length > kMinimumInterval) {
+                // Evenly sample the shape. If it is really short or a bridge
+                // just do both ends
+                auto interval = POSTING_INTERVAL;
+                std::list<PointLL> resampled;
+                if(length < POSTING_INTERVAL * 3 || w.bridge()) {
+                  resampled = {shape.front(), shape.back()};
+                  interval = length;
+                }
+                else {
+                  resampled = valhalla::midgard::resample_spherical_polyline(shape, interval);
+                }
+
+                // Get the heights at each sampled point. Compute "weighted"
+                // grades as well as max grades in both directions. Valid range
+                // for weighted grades is between -10 and +15 which is then
+                // mapped to a value between 0 to 15 for use in costing.
+                auto heights = sample->get_all(resampled);
+                forward_grades = valhalla::skadi::weighted_grade(heights, interval);
+                std::reverse(heights.begin(), heights.end());
+                reverse_grades = valhalla::skadi::weighted_grade(heights, interval);
               }
-              else
-                resampled = valhalla::midgard::resample_spherical_polyline(shape, POSTING_INTERVAL);
-              //get the heights at each point
-              auto heights = sample->get_all(resampled);
-              //compute grades in both directions, valid range is between -10 and +15, which we then
-              //map to a value between 0 and 15 (to use for indices into a factor array)
-              forward_grade = static_cast<uint32_t>(valhalla::skadi::weighted_grade(heights, interval) * .6 + 6.5);
-              std::reverse(heights.begin(), heights.end());
-              reverse_grade = static_cast<uint32_t>(valhalla::skadi::weighted_grade(heights, interval) * .6 + 6.5);
             }
 
             //TODO: curvature
             uint32_t curvature = 0;
 
             //add it in
+            uint32_t forward_grade = static_cast<uint32_t>(std::get<0>(forward_grades)  * .6 + 6.5);
+            uint32_t reverse_grade = static_cast<uint32_t>(std::get<0>(reverse_grades) * .6 + 6.5);
             auto inserted = geo_attribute_cache.insert({edge_info_offset,
-              std::make_tuple(static_cast<uint32_t>(length + .5), forward_grade, reverse_grade, curvature)});
+              std::make_tuple(static_cast<uint32_t>(length + .5), forward_grade,
+                              reverse_grade, curvature,
+                              std::get<1>(forward_grades), std::get<2>(forward_grades),
+                              std::get<1>(reverse_grades), std::get<2>(reverse_grades))});
             found = inserted.first;
           }//now we have the edge info offset
           else {
@@ -652,6 +668,8 @@ void BuildTileSet(const std::string& ways_file, const std::string& way_nodes_fil
           //if this is against the direction of the shape we must use the second one
           directededge.set_weighted_grade(forward ? std::get<1>(found->second) : std::get<2>(found->second));
           directededge.set_curvature(std::get<3>(found->second));
+          directededge.set_max_up_slope(forward ? std::get<4>(found->second) : std::get<6>(found->second));
+          directededge.set_max_down_slope(forward ? std::get<5>(found->second) : std::get<7>(found->second));
 
           // Set use to ramp or turn channel
           if (edge.attributes.turn_channel) {
@@ -930,7 +948,11 @@ void GraphBuilder::Build(const boost::property_tree::ptree& pt, OSMData& osmdata
   // Reclassify links (ramps). Cannot do this when building tiles since the
   // edge list needs to be modified
   DataQuality stats;
-  ReclassifyLinks(ways_file, nodes_file, edges_file, way_nodes_file, stats);
+  if (pt.get<bool>("mjolnir.reclassify_links", true)) {
+    ReclassifyLinks(ways_file, nodes_file, edges_file, way_nodes_file, stats);
+  } else {
+    LOG_WARN("Not reclassifying link graph edges");
+  }
 
   // Reclassify ferry connection edges - use the highway classification cutoff
   RoadClass rc = RoadClass::kPrimary;

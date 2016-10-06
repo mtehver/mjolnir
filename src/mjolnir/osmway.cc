@@ -525,9 +525,49 @@ void OSMWay::set_hov(const bool hov) {
   attributes_.fields.hov = hov;
 }
 
-// Get the seasonal flag.
+// Get the hov flag.
 bool OSMWay::hov() const {
   return attributes_.fields.hov;
+}
+
+// Set wheelchair flag.
+void OSMWay::set_wheelchair(const bool wheelchair) {
+  access_.fields.wheelchair = wheelchair;
+}
+
+// Get the wheelchair flag.
+bool OSMWay::wheelchair() const {
+  return access_.fields.wheelchair;
+}
+
+// Set wheelchair_tag flag.
+void OSMWay::set_wheelchair_tag(const bool wheelchair_tag) {
+  access_.fields.wheelchair_tag = wheelchair_tag;
+}
+
+// Get the wheelchair_tag flag.
+bool OSMWay::wheelchair_tag() const {
+  return access_.fields.wheelchair_tag;
+}
+
+// Set sidewalk left flag.
+void OSMWay::set_sidewalk_left(const bool sidewalk_left) {
+  attributes_.fields.sidewalk_left = sidewalk_left;
+}
+
+// Get the sidewalk left flag.
+bool OSMWay::sidewalk_left() const {
+  return attributes_.fields.sidewalk_left;
+}
+
+// Set sidewalk right flag.
+void OSMWay::set_sidewalk_right(const bool sidewalk_right) {
+  attributes_.fields.sidewalk_right = sidewalk_right;
+}
+
+// Get the sidewalk right flag.
+bool OSMWay::sidewalk_right() const {
+  return attributes_.fields.sidewalk_right;
 }
 
 // Set drive_on_right flag.
@@ -658,6 +698,16 @@ void OSMWay::set_link(const bool link) {
 // Get the link flag.
 bool OSMWay::link() const {
   return classification_.fields.link;
+}
+
+// Set turn channel flag.
+void OSMWay::set_turn_channel(const bool turn_channel) {
+  classification_.fields.turn_channel = turn_channel;
+}
+
+// Get the turn channel flag.
+bool OSMWay::turn_channel() const {
+  return classification_.fields.turn_channel;
 }
 
 // Get the names for the edge info based on the road class.

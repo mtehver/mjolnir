@@ -157,6 +157,24 @@ no_thru_traffic = {
 ["delivery"] = "true"
 }
 
+sidewalk = {
+["both"] = "true",
+["none"] = "false",
+["no"] = "false",
+["right"] = "true",
+["left"] = "true",
+["separate"] = "false",
+["yes"] = "true",
+["shared"] = "true",
+["this"] = "true",
+["detached"] = "false",
+["raised"] = "true",
+["separate_double"] = "false",
+["seperate"] = "false",
+["sidepath"] = "false",
+["explicit"] = "false"
+}
+
 use = {
 ["driveway"] = 4,
 ["alley"] = 5,
@@ -204,6 +222,24 @@ foot = {
 ["allowed"] = "true",
 ["passable"] = "true",
 ["footway"] = "true"
+}
+
+wheelchair = {
+["no"] = "false",
+["yes"] = "true",
+["designated"] = "true",
+["limited"] = "true",
+["official"] = "true",
+["destination"] = "true",
+["public"] = "true",
+["permissive"] = "true",
+["only"] = "true",
+["private"] = "true",
+["impassable"] = "false",
+["partial"] = "false",
+["bad"] = "false",
+["half"] = "false",
+["assisted"] = "true"
 }
 
 bus = {
@@ -412,6 +448,24 @@ foot_node = {
 ["allowed"] = 2,
 ["passable"] = 2,
 ["footway"] = 2
+}
+
+wheelchair_node = {
+["no"] = 0,
+["yes"] = 256,
+["designated"] = 256,
+["limited"] = 256,
+["official"] = 256,
+["destination"] = 256,
+["public"] = 256,
+["permissive"] = 256,
+["only"] = 256,
+["private"] = 256,
+["impassable"] = 0,
+["partial"] = 0,
+["bad"] = 0,
+["half"] = 0,
+["assisted"] = 256
 }
 
 bus_node = {
@@ -937,20 +991,22 @@ function filter_tags_generic(kv)
         use = 20
      elseif kv["pedestrian"] == "false" and kv["auto_forward"] == "false" and kv["auto_backward"] == "false" and (kv["bike_forward"] == "true" or kv["bike_backward"] == "true") then
         use = 20
+     elseif (kv["highway"] == "footway" and kv["footway"] == "sidewalk") then
+        use = 24
      elseif kv["highway"] == "footway" then
         use = 25
+     elseif kv["highway"] == "steps" then
+        use = 26 --steps/stairs     
+     elseif kv["highway"] == "path" then
+        use = 27
      elseif kv["highway"] == "pedestrian" then
-        use = 26
+        use = 28
      elseif kv["pedestrian"] == "true" and
             kv["auto_forward"] == "false" and kv["auto_backward"] == "false" and
             kv["truck_forward"] == "false" and kv["truck_backward"] == "false" and
             kv["bus_forward"] == "false" and kv["bus_backward"] == "false" and
             kv["bike_forward"] == "false" and kv["bike_backward"] == "false" then
-        use = 26
-     elseif kv["highway"] == "path" then
-        use = 27
-     elseif kv["highway"] == "steps" then
-        use = 28 --steps/stairs
+        use = 28
      elseif kv["highway"] == "bridleway" then
         use = 29
      end
@@ -982,6 +1038,7 @@ function filter_tags_generic(kv)
 
   if kv["highway"] and string.find(kv["highway"], "_link") then --*_link 
      kv["link"] = "true"  --do we need to add more?  turnlane?
+     kv["link_type"] = kv["link_type"]
   end
 
   kv["private"] = private[kv["access"]] or private[kv["motor_vehicle"]] or "false"
@@ -998,6 +1055,7 @@ function filter_tags_generic(kv)
   kv["int"] = kv["int"]
   kv["int_ref"] = kv["int_ref"]
   kv["surface"] = kv["surface"]
+  kv["wheelchair"] = wheelchair[kv["wheelchair"]]
 
   --lower the default speed for tracks
   if kv["highway"] == "track" then
@@ -1110,7 +1168,8 @@ function nodes_proc (kv, nokeys)
     access = "false"
   end 
 
-  local foot_tag = foot_node[kv["foot"]] 
+  local foot_tag = foot_node[kv["foot"]]
+  local wheelchair_tag = wheelchair_node[kv["wheelchair"]]
   local bike_tag = bicycle_node[kv["bicycle"]]
   local truck_tag = truck_node[kv["hgv"]]
   local auto_tag = motor_vehicle_node[kv["motorcar"]]
@@ -1125,6 +1184,11 @@ function nodes_proc (kv, nokeys)
   --if bus was not set and car is
   if bus_tag == nil and auto_tag == 1 then
     bus_tag = 64
+  end
+
+  --if wheelchair was not set and foot is
+  if wheelchair_tag == nil and foot_tag == 1 then
+    wheelchair_tag = 256
   end
 
   --if truck was not set and car is
@@ -1153,6 +1217,7 @@ function nodes_proc (kv, nokeys)
   local truck = truck_tag or 8 
   local bus = bus_tag or 64
   local foot = foot_tag or 2
+  local wheelchair = wheelchair_tag or 256
   local bike = bike_tag or 4
   local emergency = emergency_tag or 16
 
@@ -1162,6 +1227,7 @@ function nodes_proc (kv, nokeys)
     truck = truck_tag or 0
     bus = bus_tag or 0
     foot = foot_tag or 0
+    wheelchair = wheelchair_tag or 0
     bike = bike_tag or 0
     emergency = emergency_tag or 0
   end 
@@ -1185,6 +1251,7 @@ function nodes_proc (kv, nokeys)
       truck = truck_tag or 0
       bus = bus_tag or 0
       foot = foot_tag or 2
+      wheelchair = wheelchair_tag or 256
       bike = bike_tag or 4
       emergency = emergency_tag or 0
     end
@@ -1200,6 +1267,7 @@ function nodes_proc (kv, nokeys)
          truck = truck_tag or 8
          bus = bus_tag or 64
          foot = foot_tag or 2
+         wheelchair = wheelchair_tag or 256
          bike = bike_tag or 4
          emergency = emergency_tag or 16
     end
@@ -1258,7 +1326,7 @@ function nodes_proc (kv, nokeys)
   end
  
   --store a mask denoting access
-  kv["access_mask"] = bit32.bor(auto, emergency, truck, bike, foot, bus)
+  kv["access_mask"] = bit32.bor(auto, emergency, truck, bike, foot, wheelchair, bus)
 
   return 0, kv
 end

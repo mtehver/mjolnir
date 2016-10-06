@@ -62,9 +62,6 @@ constexpr uint32_t kUnreachableIterations = 20;
 // Number of tries when determining not thru edges
 constexpr uint32_t kMaxNoThruTries = 256;
 
-// Meters offset from start/end of shape for finding heading
-constexpr float kMetersOffsetForHeading = 30.0f;
-
 // Radius (km) to use for density
 constexpr float kDensityRadius  = 2.0f;
 constexpr float kDensityRadius2 = kDensityRadius * kDensityRadius;
@@ -438,11 +435,13 @@ bool IsIntersectionInternal(GraphReader& reader, std::mutex& lock,
 
     // Exclude edges that are nearly straight to go onto directed edge
     // Unfortunately don't have headings at the end node...
-    auto shape = tile->edgeinfo(diredge->edgeinfo_offset())->shape();
+    auto shape = tile->edgeinfo(diredge->edgeinfo_offset()).shape();
     if (!diredge->forward())
       std::reverse(shape.begin(), shape.end());
-    uint32_t to_heading = std::round(PointLL::HeadingAlongPolyline(shape,
-                                 kMetersOffsetForHeading));
+    uint32_t to_heading = std::round(
+        PointLL::HeadingAlongPolyline(
+            shape,
+            GetOffsetForHeading(diredge->classification(), diredge->use())));
     uint32_t turndegree = GetTurnDegree(heading, to_heading);
     if (turndegree < 30 || turndegree > 330) {
       continue;
@@ -1026,10 +1025,14 @@ void enhance(const boost::property_tree::ptree& pt,
             tilebuilder.directededge_builder(nodeinfo.edge_index() + j);
 
         auto e_offset = tilebuilder.edgeinfo(directededge.edgeinfo_offset());
-        auto shape = e_offset->shape();
+        auto shape = e_offset.shape();
         if (!directededge.forward())
           std::reverse(shape.begin(), shape.end());
-        heading[j] = std::round(PointLL::HeadingAlongPolyline(shape, kMetersOffsetForHeading));
+        heading[j] = std::round(
+            PointLL::HeadingAlongPolyline(
+                shape,
+                GetOffsetForHeading(directededge.classification(),
+                                    directededge.use())));
 
         // Set heading in NodeInfo. TODO - what if 2 edges have nearly the
         // same heading - should one be "adjusted" so the relative direction
@@ -1081,7 +1084,7 @@ void enhance(const boost::property_tree::ptree& pt,
           // OpenStreetMap community.  Therefore, we will not override this tag with the
           // country defaults.  Otherwise, country specific access wins.
           // Currently, overrides only exist for Trunk RC and Uses below.
-          OSMAccess target{e_offset->wayid()};
+          OSMAccess target{e_offset.wayid()};
 
           if (admin_index != 0 && country_access.find(country_code) != country_access.end() &&
               (directededge.classification() == RoadClass::kTrunk ||
@@ -1091,7 +1094,7 @@ void enhance(const boost::property_tree::ptree& pt,
 
             if (directededge.leaves_tile())
               access_tags.find(target,less_than);
-            else target = OSMAccess{e_offset->wayid()};
+            else target = OSMAccess{e_offset.wayid()};
 
             std::vector<int> access = country_access.at(country_code);
             SetCountryAccess(directededge, access, target);
@@ -1113,8 +1116,8 @@ void enhance(const boost::property_tree::ptree& pt,
                       nodeinfo.edge_index() + k);
             if (directededge.link() ||
                 ConsistentNames(country_code,
-                    tilebuilder.edgeinfo(directededge.edgeinfo_offset())->GetNames(),
-                    tilebuilder.edgeinfo(fromedge.edgeinfo_offset())->GetNames())) {
+                    tilebuilder.edgeinfo(directededge.edgeinfo_offset()).GetNames(),
+                    tilebuilder.edgeinfo(fromedge.edgeinfo_offset()).GetNames())) {
               // Set name consistency to true when entering a link (ramp or
               // turn channel) to avoid double penalizing.
               nodeinfo.set_name_consistency(j, k, true);
@@ -1177,6 +1180,8 @@ void enhance(const boost::property_tree::ptree& pt,
 
       // Set the intersection type
       if (nodeinfo.edge_count() == 1) {
+        // TODO - does this need to be a count of driveable edges
+        // (e.g. a node that has 1 driveable edge and a walkway?)
         nodeinfo.set_intersection(IntersectionType::kDeadEnd);
       } else if (nodeinfo.edge_count() == 2) {
         if (nodeinfo.type() == NodeType::kGate ||
@@ -1295,7 +1300,7 @@ void GraphEnhancer::Enhance(const boost::property_tree::ptree& pt,
   for (uint32_t id = 0; id < tiles.TileCount(); id++) {
     // If tile exists add it to the queue
     GraphId tile_id(id, local_level, 0);
-    if (GraphReader::DoesTileExist(tile_hierarchy, tile_id)) {
+    if (GraphReader::DoesTileExist(hierarchy_properties, tile_id)) {
       tempqueue.push_back(tile_id);
     }
   }
@@ -1310,7 +1315,7 @@ void GraphEnhancer::Enhance(const boost::property_tree::ptree& pt,
   for (auto& thread : threads) {
     results.emplace_back();
     thread.reset(new std::thread(enhance,
-                 std::cref(pt.get_child("mjolnir")),
+                 std::cref(hierarchy_properties),
                  std::cref(access_file), std::cref(vias), std::cref(res_ids),
                  std::ref(hierarchy_properties), std::ref(tilequeue),
                  std::ref(lock), std::ref(results.back())));
