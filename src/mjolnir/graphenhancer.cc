@@ -901,14 +901,13 @@ bool ConsistentNames(const std::string& country_code,
 // We make sure to lock on reading and writing because we dont want to race
 // since difference threads, use for the tilequeue as well
 void enhance(const boost::property_tree::ptree& pt,
-             const std::string& access_file, const std::vector<uint64_t> vias,
+             sequence<OSMAccess>& access_tags, const std::vector<uint64_t> vias,
              const std::vector<uint64_t> res_ids,
              const boost::property_tree::ptree& hierarchy_properties,
              std::queue<GraphId>& tilequeue, std::mutex& lock,
              std::promise<enhancer_stats>& result) {
 
   auto less_than = [](const OSMAccess& a, const OSMAccess& b){return a.way_id() < b.way_id();};
-  sequence<OSMAccess> access_tags(access_file, false);
 
   auto database = pt.get_optional<std::string>("admin");
   // Initialize the admin DB (if it exists)
@@ -1310,13 +1309,24 @@ void GraphEnhancer::Enhance(const boost::property_tree::ptree& pt,
   // An atomic object we can use to do the synchronization
   std::mutex lock;
 
+  sequence<OSMAccess> access_tags(access_file, false);
+  //we need to sort the access tags so that we can easily find them.
+  LOG_INFO("Sorting osm access tags by way id...");
+  {
+    access_tags.sort(
+      [](const OSMAccess& a, const OSMAccess& b){
+        return a.way_id() < b.way_id();
+      }
+    );
+  }
+
   // Start the threads
   LOG_INFO("Enhancing local graph...");
   for (auto& thread : threads) {
     results.emplace_back();
     thread.reset(new std::thread(enhance,
                  std::cref(hierarchy_properties),
-                 std::cref(access_file), std::cref(vias), std::cref(res_ids),
+                 std::ref(access_tags), std::cref(vias), std::cref(res_ids),
                  std::ref(hierarchy_properties), std::ref(tilequeue),
                  std::ref(lock), std::ref(results.back())));
   }
