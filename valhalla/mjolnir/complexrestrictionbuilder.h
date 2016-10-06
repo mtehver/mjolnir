@@ -94,6 +94,14 @@ class ComplexRestrictionBuilder {
    */
   std::size_t SizeOf() const;
 
+  /**
+   * overloaded == operator - used to ensure no dups in tiles.
+   * @param  other  ComplexRestrictionBuilder to compare to.
+   * @return  Returns true or false if equal or not.
+   *
+   */
+  bool operator == (const ComplexRestrictionBuilder& other) const;
+
  protected:
   //from edgeid
   uint64_t from_id_;

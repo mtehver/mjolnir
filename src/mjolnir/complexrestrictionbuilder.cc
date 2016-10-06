@@ -118,5 +118,21 @@ std::ostream& operator<<(std::ostream& os, const ComplexRestrictionBuilder& crb)
   return os;
 }
 
+// overloaded == operator - used to ensure no dups in tiles.
+bool ComplexRestrictionBuilder::operator == (const ComplexRestrictionBuilder& other) const {
+
+  if (from_id_ != other.from_id_ || to_id_ != other.to_id_ ||
+      via_list_ != other.via_list_ ||
+      restriction_.type_ != other.restriction_.type_ ||
+      restriction_.modes_ != other.restriction_.modes_ ||
+      restriction_.begin_day_ != other.restriction_.begin_day_ ||
+      restriction_.end_day_ != other.restriction_.end_day_ ||
+      restriction_.begin_time_ != other.restriction_.begin_time_ ||
+      restriction_.elapsed_time_ != other.restriction_.elapsed_time_)
+    return false;
+
+  return true;
+}
+
 }
 }
