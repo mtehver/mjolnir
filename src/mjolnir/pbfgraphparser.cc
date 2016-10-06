@@ -1140,17 +1140,6 @@ OSMData PBFGraphParser::Parse(const boost::property_tree::ptree& pt, const std::
       }
     );
   }
-  //we need to sort the access tags so that we can easily find them.
-  LOG_INFO("Sorting osm access tags by way id...");
-  {
-    sequence<OSMAccess> access(access_file, false);
-    access.sort(
-      [](const OSMAccess& a, const OSMAccess& b){
-        return a.way_id() < b.way_id();
-      }
-    );
-  }
-
   LOG_INFO("Finished");
 
   // Parse node in all the input files. Skip any that are not marked from
