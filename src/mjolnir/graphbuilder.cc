@@ -392,6 +392,9 @@ void BuildTileSet(const std::string& ways_file, const std::string& way_nodes_fil
   std::unordered_map<uint32_t, std::tuple<uint32_t, uint32_t, uint32_t, uint32_t,
                         float, float, float, float> > geo_attribute_cache;
 
+  sequence<ComplexRestrictionBuilder> complex_restrictions("complex_restrictions.bin", true);
+  std::unordered_multimap<uint64_t, ComplexRestrictionBuilder> tmp_crb;
+
   ////////////////////////////////////////////////////////////////////////////
   // Iterate over tiles
   for(; tile_start != tile_end; ++tile_start) {
@@ -726,7 +729,7 @@ void BuildTileSet(const std::string& ways_file, const std::string& way_nodes_fil
               directededge.set_part_of_complex_restriction(true);
               for (auto it = range.first; it != range.second; ++it) {
                 lock.lock();
-                osmdata.vias[it->second] = edgeid;
+                osmdata.vias[it->second] = edgeid;    // gk needed?
                 lock.unlock();
               }
             }
@@ -736,10 +739,12 @@ void BuildTileSet(const std::string& ways_file, const std::string& way_nodes_fil
             auto index = osmdata.index_map.find(w.way_id());
             if (index != osmdata.index_map.end()) {
               lock.lock();
-              osmdata.res_ids[index->second] = edgeid;
+              osmdata.res_ids[index->second] = edgeid;   // gk needed?
               lock.unlock();
 
               // is this edge the end of a restriction?
+              // this is a multimap because the edge could be the end of multiple
+              // restrictions
               auto to = osmdata.end_map.equal_range(w.way_id());
               if (to.first != osmdata.end_map.end()) {
 
@@ -757,6 +762,40 @@ void BuildTileSet(const std::string& ways_file, const std::string& way_nodes_fil
                         vias.emplace_back(r->second.via_begin_index());
                         vias.emplace_back(r->second.via_end_index());
 
+                        ComplexRestrictionBuilder crb;
+                        crb.set_from_id(r->first);
+                        crb.set_via_list(vias);
+                        crb.set_to_id(r->second.to());
+                        crb.set_type(r->second.type());
+
+                        crb.set_begin_day(r->second.day_on());
+                        crb.set_end_day(r->second.day_off());
+                        uint64_t begin_time = DateTime::seconds_from_midnight(std::to_string(r->second.hour_on()) + ":" +
+                                              std::to_string(r->second.minute_on()));
+                        crb.set_begin_time(begin_time);
+                        crb.set_elapsed_time(DateTime::seconds_from_midnight(std::to_string(r->second.hour_off()) + ":" +
+                                                                             std::to_string(r->second.minute_off())) - begin_time);
+
+                        // determine if we need to add this complex restriction or not.
+                        // basically we do not want any dups.
+                        bool bfound = false;
+                        for (const auto& cr : tmp_crb) {
+                          bool bfound = false;
+                          auto res = tmp_crb.equal_range(r->first);
+                          if (res.first != tmp_crb.end()) {
+                            for (auto builder = res.first; builder != res.second; ++builder) {
+                              if (cr.second == builder->second) {
+                                bfound = true;
+                                break;
+                              }
+                            }
+                          }
+                        }
+                        if (!bfound) {// no dups.
+                          tmp_crb.emplace(r->first, crb);
+                          complex_restrictions.push_back(crb);
+                        }
+
                         // must add the complex restriction for the to/end edges.  dups will be removed in the
                         // graph enhancer.  at this point to, from, and vias are all wayids.
                         graphtile.AddComplexRestriction(r->first, vias,
@@ -771,6 +810,8 @@ void BuildTileSet(const std::string& ways_file, const std::string& way_nodes_fil
               }
 
               // is this edge the start of a restriction.
+              // this is a multimap because the edge could be the start of multiple
+              // restrictions
               auto res = osmdata.restrictions.equal_range(index->second);
               if (res.first != osmdata.restrictions.end()) {
                 for (auto r = res.first; r != res.second; ++r) {
@@ -780,6 +821,40 @@ void BuildTileSet(const std::string& ways_file, const std::string& way_nodes_fil
                     std::vector<uint64_t> vias;
                     vias.emplace_back(r->second.via_begin_index());
                     vias.emplace_back(r->second.via_end_index());
+
+                    ComplexRestrictionBuilder crb;
+                    crb.set_from_id(r->first);
+                    crb.set_via_list(vias);
+                    crb.set_to_id(r->second.to());
+                    crb.set_type(r->second.type());
+
+                    crb.set_begin_day(r->second.day_on());
+                    crb.set_end_day(r->second.day_off());
+                    uint64_t begin_time = DateTime::seconds_from_midnight(std::to_string(r->second.hour_on()) + ":" +
+                                          std::to_string(r->second.minute_on()));
+                    crb.set_begin_time(begin_time);
+                    crb.set_elapsed_time(DateTime::seconds_from_midnight(std::to_string(r->second.hour_off()) + ":" +
+                                                                         std::to_string(r->second.minute_off())) - begin_time);
+
+                    // determine if we need to add this complex restriction or not.
+                    // basically we do not want any dups.
+                    bool bfound = false;
+                    for (const auto& cr : tmp_crb) {
+                      bool bfound = false;
+                      auto res = tmp_crb.equal_range(r->first);
+                      if (res.first != tmp_crb.end()) {
+                        for (auto builder = res.first; builder != res.second; ++builder) {
+                          if (cr.second == builder->second) {
+                            bfound = true;
+                            break;
+                          }
+                        }
+                      }
+                    }
+                    if (!bfound) {// no dups.
+                      tmp_crb.emplace(r->first, crb);
+                      complex_restrictions.push_back(crb);
+                    }
 
                     // add the complex restriction for the from/begin edges.  dups will be removed in the
                     // graph enhancer.  at this point to, from, and vias are all wayids.
