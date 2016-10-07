@@ -127,8 +127,8 @@ void TestAddBins() {
    */
   for(const auto& test_tile : std::list<std::pair<std::string, size_t> >
       {
-        {"746/338.gph", 746338},
-        {"762/161.gph", 762161}
+        {"750/662.gph", 750662},
+        {"776/577.gph", 776577}
       }) {
 
     //load a tile
