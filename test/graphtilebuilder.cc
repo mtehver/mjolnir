@@ -116,7 +116,8 @@ void TestDuplicateEdgeInfo() {
 
 void TestAddBins() {
 
-  //if you update the tile format you must regenerate test tiles for this:
+  //if you update the tile format you must regenerate test tiles. after your tile format change,
+  //run valhalla_build_tiles on a reasonable sized extract. when its done do the following:
   /*
     git rm -rf test/data/bin_tiles/no_bin
     for f in $(find /data/valhalla/2 -printf '%s %P\n'| sort -n | head -n 2 | awk '{print $2}'); do
@@ -124,7 +125,10 @@ void TestAddBins() {
       cp -rp /data/valhalla/2/${f} test/data/bin_tiles/no_bin/2/${f}
     done
     git add test/data/bin_tiles/no_bin
+    git status
    */
+  //this will grab the 2 smallest tiles from you new tile set and make them the new test tiles
+  //note the names of the new tiles and update the list with path and index in the list just below
   for(const auto& test_tile : std::list<std::pair<std::string, size_t> >
       {
         {"746/338.gph", 746338},
