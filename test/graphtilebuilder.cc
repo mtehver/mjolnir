@@ -43,7 +43,7 @@ bool tile_equalish(const GraphTile a, const GraphTile b, size_t difference, cons
   const auto* ah = a.header(), *bh = b.header();
   if(ah->access_restriction_count() == bh->access_restriction_count() &&
      ah->admincount() == bh->admincount() &&
-     ah->complex_restriction_offset() == bh->complex_restriction_offset() &&
+     ah->complex_restriction_offset() + difference == bh->complex_restriction_offset() &&
      ah->date_created() == bh->date_created() &&
      ah->density() == bh->density() &&
      ah->departurecount() == bh->departurecount() &&
