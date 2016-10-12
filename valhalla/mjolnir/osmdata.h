@@ -6,6 +6,7 @@
 #include <vector>
 #include <map>
 #include <memory>
+#include <unordered_set>
 
 #include <valhalla/mjolnir/osmnode.h>
 #include <valhalla/mjolnir/osmway.h>
@@ -29,11 +30,9 @@ struct OSMBike {
 
 using RestrictionsMultiMap = std::unordered_multimap<uint64_t, OSMRestriction>;
 
-using ViaMap = std::unordered_multimap<uint64_t, uint32_t>;
+using ViaSet = std::unordered_set<uint64_t>;
 
 using EndMap = std::unordered_multimap<uint64_t, uint64_t>;
-
-using IndexMap = std::unordered_map<uint64_t, uint64_t>;
 
 using AccessRestrictionsMultiMap = std::unordered_multimap<uint64_t, OSMAccessRestriction>;
 
@@ -71,20 +70,11 @@ struct OSMData {
   // Stores simple restrictions. Indexed by the from way Id
   RestrictionsMultiMap restrictions;
 
-  // Stores all of the vias for restrictions.
-  std::vector<uint64_t> vias;
-
-  // Stores all of the to and from ids for restrictions.
-  std::vector<uint64_t> res_ids;
-
-  // Multi Map used to find out if a wayid is in the vector of vias
-  ViaMap via_map;
+  // unordered set used to find out if a wayid is in the vector of vias
+  ViaSet via_set;
 
   // Multi Map used to find out if a wayid is the to edge for a complex restriction
   EndMap end_map;
-
-  // Map used to find out if a wayid is in the vector of res_ids
-  IndexMap index_map;
 
   // Stores access restrictions. Indexed by the from way Id.
   AccessRestrictionsMultiMap access_restrictions;
