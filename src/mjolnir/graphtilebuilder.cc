@@ -668,9 +668,9 @@ void GraphTileBuilder::AddTileCreationDate(const uint32_t tile_creation_date) {
 using tweeners_t = std::unordered_map<GraphId, std::array<std::vector<GraphId>, kBinCount> >;
 std::array<std::vector<GraphId>, kBinCount> GraphTileBuilder::BinEdges(const TileHierarchy& hierarchy, const GraphTile* tile, tweeners_t& tweeners) {
   std::array<std::vector<GraphId>, kBinCount> bins;
-  //only do most detailed level
-  if(tile->header()->graphid().level() != hierarchy.levels().rbegin()->first)
-    return bins;
+  //the lowest level is the only place we store these directly
+  auto lowest_level = hierarchy.levels().rbegin()->first;
+  auto lowest = tile->header()->graphid().level() == lowest_level;
   auto tiles = hierarchy.levels().rbegin()->second.tiles;
 
   //each edge please
@@ -690,20 +690,22 @@ std::array<std::vector<GraphId>, kBinCount> GraphTileBuilder::BinEdges(const Til
     auto info = tile->edgeinfo(edge->edgeinfo_offset());
     const auto& shape = info.shape();
     auto intersection = tiles.Intersect(shape);
+    auto start_id = tiles.TileId(edge->forward() ? shape.front() : shape.back());
+    auto end_id = tiles.TileId(edge->forward() ? shape.back() : shape.front());
 
     //bin some in, save some for later, ignore some
     GraphId edge_id(tile->header()->graphid().tileid(), tile->header()->graphid().level(), edge - start_edge);
     for(const auto& i : intersection) {
       //to avoid dups and minimize having to leave the tile for shape we:
       //always write a given edge to the tile it originates in
-      bool originating = i.first == edge_id.tileid();
+      bool originating = i.first == start_id;
       //never write a given edge to the tile it terminates in
-      bool terminating = i.first == edge->endnode().tileid();
+      bool terminating = i.first == end_id;
       //write a given edge to intermediate tiles only if its originating tile id is < its terminating tile id
-      bool intermediate = i.first < edge->endnode().tileid();
+      bool intermediate = i.first < end_id;
       if(originating || (intermediate && !terminating)) {
         //which set of bins
-        auto& out_bins = originating ? bins : tweeners.insert({GraphId(i.first, edge_id.level(), 0), {}}).first->second;
+        auto& out_bins = originating && lowest ? bins : tweeners.insert({GraphId(i.first, lowest_level, 0), {}}).first->second;
         //keep the edge id
         for(auto bin : i.second)
           out_bins[bin].push_back(edge_id);
