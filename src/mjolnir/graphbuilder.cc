@@ -392,7 +392,7 @@ void BuildTileSet(const std::string& ways_file, const std::string& way_nodes_fil
   std::unordered_map<uint32_t, std::tuple<uint32_t, uint32_t, uint32_t, uint32_t,
                         float, float, float, float> > geo_attribute_cache;
 
-  sequence<ComplexRestrictionBuilder> complex_restrictions("complex_restrictions.bin", true);
+  //sequence<ComplexRestrictionBuilder> complex_restrictions("complex_restrictions.bin", true);
   std::unordered_multimap<uint64_t, ComplexRestrictionBuilder> tmp_crb;
 
   ////////////////////////////////////////////////////////////////////////////
@@ -719,33 +719,36 @@ void BuildTileSet(const std::string& ways_file, const std::string& way_nodes_fil
             }
           }
 
-          if (forward) {
-            GraphId edgeid(id, local_level, idx);
+          if (osmdata.via_set.find(w.way_id()) != osmdata.via_set.end())
+            directededge.set_part_of_complex_restriction(true);
+
+          //if (forward) {
+          //  GraphId edgeid(id, local_level, idx);
 
             // is this edge part of a complex restriction?
             // if so update the wayid to be a graphid
-            auto range = osmdata.via_map.equal_range(w.way_id());
-            if (range.first != osmdata.via_map.end()) {
-              directededge.set_part_of_complex_restriction(true);
-              for (auto it = range.first; it != range.second; ++it) {
-                lock.lock();
-                osmdata.vias[it->second] = edgeid;    // gk needed?
-                lock.unlock();
-              }
-            }
+            //auto range = osmdata.via_map.equal_range(w.way_id());
+            //if (range.first != osmdata.via_map.end()) {
+            //  directededge.set_part_of_complex_restriction(true);
+            //  for (auto it = range.first; it != range.second; ++it) {
+            //    lock.lock();
+            //    osmdata.vias[it->second] = edgeid;    // gk needed?
+            //    lock.unlock();
+            //  }
+            // }
 
             // is this edge the start or end of a complex restriction?
             // if so update the wayid to be a graphid
-            auto index = osmdata.index_map.find(w.way_id());
-            if (index != osmdata.index_map.end()) {
-              lock.lock();
-              osmdata.res_ids[index->second] = edgeid;   // gk needed?
-              lock.unlock();
+            //auto index = osmdata.index_map.find(w.way_id());
+            //if (index != osmdata.index_map.end()) {
+            //  lock.lock();
+            //  osmdata.res_ids[index->second] = edgeid;   // gk needed?
+            //  lock.unlock();
 
               // is this edge the end of a restriction?
               // this is a multimap because the edge could be the end of multiple
               // restrictions
-              auto to = osmdata.end_map.equal_range(w.way_id());
+            /*  auto to = osmdata.end_map.equal_range(w.way_id());
               if (to.first != osmdata.end_map.end()) {
 
                 for (auto it = to.first; it != to.second; ++it) {
@@ -753,14 +756,19 @@ void BuildTileSet(const std::string& ways_file, const std::string& way_nodes_fil
                   if (res.first != osmdata.restrictions.end()) {
                     for (auto r = res.first; r != res.second; ++r) {
                       if (r->second.via_begin_index() != 0 && r->second.via_end_index() != 0 &&
-                          r->second.to() == index->second) {
+                          r->second.to() == w.way_id()) {
 
                         // set the modes
                         directededge.set_end_restriction(directededge.end_restriction() | r->second.modes());
 
                         std::vector<uint64_t> vias;
-                        vias.emplace_back(r->second.via_begin_index());
-                        vias.emplace_back(r->second.via_end_index());
+                        vias.reserve((r->second.via_end_index() - r->second.via_begin_index())+1);
+
+                        uint32_t i = r->second.via_begin_index();
+                        while (i <= r->second.via_end_index()) {
+                          vias.push_back(osmdata.vias[i]);
+                          i++;
+                        }
 
                         ComplexRestrictionBuilder crb;
                         crb.set_from_id(r->first);
@@ -793,16 +801,16 @@ void BuildTileSet(const std::string& ways_file, const std::string& way_nodes_fil
                         }
                         if (!bfound) {// no dups.
                           tmp_crb.emplace(r->first, crb);
-                          complex_restrictions.push_back(crb);
+                          //complex_restrictions.push_back(crb);
                         }
 
                         // must add the complex restriction for the to/end edges.  dups will be removed in the
                         // graph enhancer.  at this point to, from, and vias are all wayids.
-                        graphtile.AddComplexRestriction(r->first, vias,
-                                                        r->second.to(), r->second.type(),
-                                                        r->second.day_on(), r->second.day_off(),
-                                                        r->second.hour_on(), r->second.minute_on(),
-                                                        r->second.hour_off(), r->second.minute_off());
+                        //graphtile.AddComplexRestriction(r->first, vias,
+                        //                                r->second.to(), r->second.type(),
+                        //                               r->second.day_on(), r->second.day_off(),
+                        //                                r->second.hour_on(), r->second.minute_on(),
+                        //                                r->second.hour_off(), r->second.minute_off());
                       }
                     }
                   }
@@ -812,7 +820,7 @@ void BuildTileSet(const std::string& ways_file, const std::string& way_nodes_fil
               // is this edge the start of a restriction.
               // this is a multimap because the edge could be the start of multiple
               // restrictions
-              auto res = osmdata.restrictions.equal_range(index->second);
+              auto res = osmdata.restrictions.equal_range(w.way_id());
               if (res.first != osmdata.restrictions.end()) {
                 for (auto r = res.first; r != res.second; ++r) {
                   if (r->second.via_begin_index() != 0 && r->second.via_end_index() != 0) {
@@ -853,21 +861,22 @@ void BuildTileSet(const std::string& ways_file, const std::string& way_nodes_fil
                     }
                     if (!bfound) {// no dups.
                       tmp_crb.emplace(r->first, crb);
-                      complex_restrictions.push_back(crb);
+                      //complex_restrictions.push_back(crb);
                     }
 
                     // add the complex restriction for the from/begin edges.  dups will be removed in the
                     // graph enhancer.  at this point to, from, and vias are all wayids.
-                    graphtile.AddComplexRestriction(r->first, vias,
-                                                    r->second.to(), r->second.type(),
-                                                    r->second.day_on(), r->second.day_off(),
-                                                    r->second.hour_on(), r->second.minute_on(),
-                                                    r->second.hour_off(), r->second.minute_off());
+                    //graphtile.AddComplexRestriction(r->first, vias,
+                    //                                r->second.to(), r->second.type(),
+                    //                                r->second.day_on(), r->second.day_off(),
+                    //                                r->second.hour_on(), r->second.minute_on(),
+                    //                                r->second.hour_off(), r->second.minute_off());
                   }
                 }
               }
-            }
+            //}
           }
+          */
           // Set drive on right flag
           if (admin_index != 0)
             directededge.set_drive_on_right(drive_on_right[admin_index]);
