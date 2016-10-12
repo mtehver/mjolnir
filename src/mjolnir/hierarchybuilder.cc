@@ -448,7 +448,7 @@ void RemoveUnusedLocalTiles(const TileHierarchy& tile_hierarchy,
       std::string file_location = tile_hierarchy.tile_dir() + "/" +
           GraphTile::FileSuffix(empty_tile.Tile_Base(), tile_hierarchy);
       remove(file_location.c_str());
-      LOG_INFO("Remove file: " + file_location);
+      LOG_DEBUG("Remove file: " + file_location);
     }
   }
 }

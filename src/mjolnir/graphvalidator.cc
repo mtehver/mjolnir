@@ -252,7 +252,7 @@ uint32_t GetOpposingEdgeIndex(const GraphId& startnode, DirectedEdge& edge,
 using tweeners_t = GraphTileBuilder::tweeners_t;
 void validate(const boost::property_tree::ptree& pt,
               std::deque<GraphId>& tilequeue, std::mutex& lock,
-              std::promise<std::tuple<std::vector<uint32_t>, std::vector<std::vector<float>>, tweeners_t>>& result) {
+              std::promise<std::tuple<std::vector<uint32_t>, std::vector<std::vector<float> >, tweeners_t> >& result) {
     // Our local copy of edges binned to tiles that they pass through (dont start or end in)
     tweeners_t tweeners;
     // Local Graphreader
@@ -421,8 +421,6 @@ void validate(const boost::property_tree::ptree& pt,
 
       // Write the bins to it
       if (tile->header()->graphid().level() == hierarchy.levels().rbegin()->first) {
-
-        // TODO: we could just also make tilebuilder::Update write the bins
         auto reloaded = GraphTile(hierarchy, tile_id);
         GraphTileBuilder::AddBins(hierarchy, &reloaded, bins);
       }
@@ -471,20 +469,16 @@ void validate(const boost::property_tree::ptree& pt,
       ++start;
       lock.unlock();
 
-      //ignore transit tiles.
-      if (tile_bin.first.level() <= hierarchy.levels().rbegin()->second.level) {
+      //if there is nothing there we need to make something
+      GraphTile tile(hierarchy, tile_bin.first);
 
-        //if there is nothing there we need to make something
-        GraphTile tile(hierarchy, tile_bin.first);
-
-        if(tile.size() == 0) {
-          GraphTileBuilder empty(hierarchy, tile_bin.first, false);
-          empty.StoreTileData();
-          tile = GraphTile(hierarchy, tile_bin.first);
-        }
-        //keep the extra binned edges
-        GraphTileBuilder::AddBins(hierarchy, &tile, tile_bin.second);
+      if(tile.size() == 0) {
+        GraphTileBuilder empty(hierarchy, tile_bin.first, false);
+        empty.StoreTileData();
+        tile = GraphTile(hierarchy, tile_bin.first);
       }
+      //keep the extra binned edges
+      GraphTileBuilder::AddBins(hierarchy, &tile, tile_bin.second);
     }
   }
 }
