@@ -25,7 +25,8 @@ class PBFGraphParser {
    * @param  access_file    where to store the access tags so they are not in memory
    */
   static OSMData Parse(const boost::property_tree::ptree& pt, const std::vector<std::string>& input_files,
-      const std::string& ways_file, const std::string& way_nodes_file, const std::string& access_file);
+      const std::string& ways_file, const std::string& way_nodes_file, const std::string& access_file,
+      const std::string& complex_restriction_file);
 
 };
 
