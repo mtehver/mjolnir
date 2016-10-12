@@ -14,15 +14,15 @@ class GraphEnhancer {
 
   /**
    * Enhance the local level graph tile information.
-   * @param pt          property tree containing the hierarchy configuration
-   * @param access_file where to store the nodes so they are not in memory
-   * @param vias        updated vias (wayids were updated in the builder to graphids)
-   * @param res_ids     updated to and from ids (wayids were updated in the builder to graphids)
+   * @param pt                        property tree containing the hierarchy configuration
+   * @param access_file               where to store the access tags so they are not in memory
+   * @param complex_restriction_file  where to store the complex restriction so they are not in memory
+   * @param end_map                   map of ids that are at the end of a restriction
    */
   static void Enhance(const boost::property_tree::ptree& pt,
                       const std::string& access_file,
-                      const std::vector<uint64_t> vias,
-                      const std::vector<uint64_t> res_ids);
+                      const std::string& complex_restriction_file,
+                      const std::unordered_multimap<uint64_t, uint64_t>& end_map);
 
 };
 

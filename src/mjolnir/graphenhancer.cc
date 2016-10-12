@@ -2,6 +2,7 @@
 #include "mjolnir/graphenhancer.h"
 #include "mjolnir/graphtilebuilder.h"
 #include "mjolnir/countryaccess.h"
+#include "mjolnir/osmrestriction.h"
 
 #include <memory>
 #include <future>
@@ -901,8 +902,9 @@ bool ConsistentNames(const std::string& country_code,
 // We make sure to lock on reading and writing because we dont want to race
 // since difference threads, use for the tilequeue as well
 void enhance(const boost::property_tree::ptree& pt,
-             sequence<OSMAccess>& access_tags, const std::vector<uint64_t> vias,
-             const std::vector<uint64_t> res_ids,
+             sequence<OSMAccess>& access_tags,
+             sequence<OSMRestriction>& complex_restrictions,
+             const std::unordered_multimap<uint64_t, uint64_t>& end_map,
              const boost::property_tree::ptree& hierarchy_properties,
              std::queue<GraphId>& tilequeue, std::mutex& lock,
              std::promise<enhancer_stats>& result) {
@@ -925,6 +927,9 @@ void enhance(const boost::property_tree::ptree& pt,
   const auto& tile_hierarchy = reader.GetTileHierarchy();
   const auto& local_level = tile_hierarchy.levels().rbegin()->second.level;
   const auto& tiles = tile_hierarchy.levels().rbegin()->second.tiles;
+
+  std::unordered_multimap<uint64_t, ComplexRestriction> tmp_cr;
+  std::list<ComplexRestrictionBuilder> updated_cr_list;
 
   // Iterate through the tiles in the queue and perform enhancements
   while (true) {
@@ -1091,13 +1096,42 @@ void enhance(const boost::property_tree::ptree& pt,
                   directededge.use() == Use::kPedestrian || directededge.use() == Use::kBridleway ||
                   directededge.use() == Use::kCycleway || directededge.use() == Use::kPath)) {
 
-            if (directededge.leaves_tile())
-              access_tags.find(target,less_than);
-            else target = OSMAccess{e_offset.wayid()};
+            //if (directededge.leaves_tile())
+            auto found = access_tags.find(target,less_than);
+
+          //  if (!found)
+              target = OSMAccess{e_offset.wayid()};
 
             std::vector<int> access = country_access.at(country_code);
             SetCountryAccess(directededge, access, target);
           }
+        }
+
+        //find a node we need to update
+      /*  OSMRestriction found{e_offset.wayid()};;
+        if(complex_restrictions.find(found, [](const OSMRestriction& a, const OSMRestriction& b) { return a.from() < b.from(); })) {
+          complex_restrictions.at((&found) - &(*complex_restrictions.begin()));
+          //std::cout << index << " id" << std::endl;
+          //we found the first one
+          if(index < complex_restrictions.size()) {
+            //update all the nodes that match it
+            OSMRestriction restriction{};
+            while(index < complex_restrictions.size() && (restriction = (complex_restrictions)[index]).from() == e_offset.wayid()) {
+              std::cout << restriction.from() << " " << restriction.to() << std::endl;
+
+              ++index;
+            }
+          }
+        }
+*/
+        OSMRestriction target{e_offset.wayid()};
+        OSMRestriction restriction{};
+        sequence<OSMRestriction>::iterator it = complex_restrictions.find(target, [](const OSMRestriction& a, const OSMRestriction& b) { return a.from() < b.from(); });
+        while (it != complex_restrictions.end() && (restriction = *it).from() == e_offset.wayid()) {
+
+         // std::cout << e_offset.wayid() << " " << restriction.from() << " " << restriction.to() << std::endl;
+
+          it++;
         }
 
         // Use::kPedestrian is really a kFootway
@@ -1192,14 +1226,9 @@ void enhance(const boost::property_tree::ptree& pt,
       }
     }
 
-    std::unordered_multimap<uint64_t, ComplexRestriction> complex_restrictions =
-        tilebuilder.GetRestrictions(false);
-    std::unordered_multimap<uint64_t, ComplexRestriction> tmp_cr;
-    std::list<ComplexRestrictionBuilder> updated_cr_list;
-
     // determine if we need to add this complex restriction or not.
     // basically we do not want any dups.
-    for (const auto& cr : complex_restrictions) {
+/*    for (const auto& cr : complex_restrictions) {
       bool bfound = false;
       auto res = tmp_cr.equal_range(cr.second.from_id());
       if (res.first != tmp_cr.end()) {
@@ -1213,27 +1242,17 @@ void enhance(const boost::property_tree::ptree& pt,
       if (bfound) // no dups.
         continue;
 
+
+
+
       tmp_cr.emplace(cr.second.from_id(), cr.second);
-
-      // update the to and from to be graphids.
-      uint64_t from = res_ids[cr.second.from_id()];
-      uint64_t to = res_ids[cr.second.to_id()];
-
-      // update the vias to be graphids
-      const std::vector<uint64_t> cr_vias = cr.second.GetVias();
-      std::vector<uint64_t> graphid_vias;
-      uint32_t i = cr_vias[0];
-      while (i <= cr_vias[1]) {
-        graphid_vias.push_back(vias[i]);
-        i++;
-      }
 
       updated_cr_list.emplace_back();
       ComplexRestrictionBuilder& complex_restriction = updated_cr_list.back();
 
-      complex_restriction.set_from_id(from);
-      complex_restriction.set_via_list(graphid_vias);
-      complex_restriction.set_to_id(to);
+      complex_restriction.set_from_id(cr.second.from_id());
+      complex_restriction.set_via_list(cr.second.GetVias());
+      complex_restriction.set_to_id(cr.second.to_id());
       complex_restriction.set_type(cr.second.type());
 
       complex_restriction.set_begin_day(cr.second.begin_day());
@@ -1243,6 +1262,8 @@ void enhance(const boost::property_tree::ptree& pt,
     }
     // update the complex restrictions in the tile.
     tilebuilder.UpdateComplexRestrictions(updated_cr_list);
+
+*/
 
     // Replace access restrictions
     if (ar_before != access_restrictions.size()) {
@@ -1279,8 +1300,8 @@ namespace mjolnir {
 // Enhance the local level of the graph
 void GraphEnhancer::Enhance(const boost::property_tree::ptree& pt,
                             const std::string& access_file,
-                            const std::vector<uint64_t> vias,
-                            const std::vector<uint64_t> res_ids) {
+                            const std::string& complex_restriction_file,
+                            const std::unordered_multimap<uint64_t, uint64_t>& end_map) {
   // A place to hold worker threads and their results, exceptions or otherwise
   std::vector<std::shared_ptr<std::thread> > threads(
     std::max(static_cast<unsigned int>(1),
@@ -1320,13 +1341,16 @@ void GraphEnhancer::Enhance(const boost::property_tree::ptree& pt,
     );
   }
 
+  sequence<OSMRestriction> complex_restrictions(complex_restriction_file, false);
+
+  std::cout << complex_restrictions.size() << " size" << std::endl;
   // Start the threads
   LOG_INFO("Enhancing local graph...");
   for (auto& thread : threads) {
     results.emplace_back();
     thread.reset(new std::thread(enhance,
                  std::cref(hierarchy_properties),
-                 std::ref(access_tags), std::cref(vias), std::cref(res_ids),
+                 std::ref(access_tags), std::ref(complex_restrictions), end_map,
                  std::ref(hierarchy_properties), std::ref(tilequeue),
                  std::ref(lock), std::ref(results.back())));
   }
