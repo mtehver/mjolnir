@@ -668,9 +668,13 @@ void GraphTileBuilder::AddTileCreationDate(const uint32_t tile_creation_date) {
 using tweeners_t = std::unordered_map<GraphId, std::array<std::vector<GraphId>, kBinCount> >;
 std::array<std::vector<GraphId>, kBinCount> GraphTileBuilder::BinEdges(const TileHierarchy& hierarchy, const GraphTile* tile, tweeners_t& tweeners) {
   std::array<std::vector<GraphId>, kBinCount> bins;
-  //the lowest level is the only place we store these directly
-  auto lowest_level = hierarchy.levels().rbegin()->first;
-  auto lowest = tile->header()->graphid().level() == lowest_level;
+  //we store these at the highest level
+  auto max_level = hierarchy.levels().rbegin()->first;
+  //skip transit or other special levels
+  if(tile->header()->graphid().level() > max_level)
+    return bins;
+  //is this the highest level
+  auto max = tile->header()->graphid().level() == max_level;
   auto tiles = hierarchy.levels().rbegin()->second.tiles;
 
   //each edge please
@@ -686,9 +690,12 @@ std::array<std::vector<GraphId>, kBinCount> GraphTileBuilder::BinEdges(const Til
     if(!id.second)
       continue;
 
-    //intersect the shape
+    //get the shape or bail if none
     auto info = tile->edgeinfo(edge->edgeinfo_offset());
     const auto& shape = info.shape();
+    if(shape.empty())
+      continue;
+    //compute the intersection with the bins
     auto intersection = tiles.Intersect(shape);
     auto start_id = tiles.TileId(edge->forward() ? shape.front() : shape.back());
     auto end_id = tiles.TileId(edge->forward() ? shape.back() : shape.front());
@@ -705,7 +712,7 @@ std::array<std::vector<GraphId>, kBinCount> GraphTileBuilder::BinEdges(const Til
       bool intermediate = i.first < end_id;
       if(originating || (intermediate && !terminating)) {
         //which set of bins
-        auto& out_bins = originating && lowest ? bins : tweeners.insert({GraphId(i.first, lowest_level, 0), {}}).first->second;
+        auto& out_bins = originating && max ? bins : tweeners.insert({GraphId(i.first, max_level, 0), {}}).first->second;
         //keep the edge id
         for(auto bin : i.second)
           out_bins[bin].push_back(edge_id);
