@@ -198,16 +198,17 @@ bool CanContract(GraphReader& reader, const GraphTile* tile,
     return false;
   }
 
-  // Get list of valid edges, excluding transition and transit connection
-  // edges. Also skip shortcut edge - this can happen if tile cache is cleared
+  // Get list of valid edges, excluding downward transition edges and transit
+  // connection edges. An upward transition edge indicates edges exist on a
+  // higher class level, so we don't want to create a shortcut there.
+  // Also skip shortcut edge - this can happen if tile cache is cleared
   // and this enters a tile where shortcuts have already been created.
   std::vector<GraphId> edges;
   GraphId edgeid(node.tileid(), node.level(), nodeinfo->edge_index());
   for (uint32_t i = 0, n = nodeinfo->edge_count(); i < n; i++, edgeid++) {
     const DirectedEdge* directededge = tile->directededge(edgeid);
-    if (!directededge->trans_down() && !directededge->trans_up() &&
-        directededge->use() != Use::kTransitConnection &&
-        !directededge->is_shortcut()) {
+    if (!directededge->trans_down() && !directededge->is_shortcut() &&
+         directededge->use() != Use::kTransitConnection) {
       edges.push_back(edgeid);
     }
   }
