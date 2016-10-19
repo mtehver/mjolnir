@@ -25,6 +25,7 @@
 #include <valhalla/baldr/datetime.h>
 #include <valhalla/baldr/graphtile.h>
 #include <valhalla/baldr/graphreader.h>
+#include <valhalla/baldr/graphtilefsstorage.h>
 #include <valhalla/midgard/util.h>
 #include <valhalla/midgard/logging.h>
 
@@ -581,7 +582,7 @@ GraphId TransitToTile(const boost::property_tree::ptree& pt, const std::string& 
   auto tile_dir = pt.get<std::string>("mjolnir.tile_dir");
   auto transit_dir = pt.get<std::string>("mjolnir.transit_dir");
   auto graph_tile = tile_dir + transit_tile.substr(transit_dir.size());
-  return GraphTile::GetTileId(graph_tile, tile_dir);
+  return GraphTileFsStorage::GetTileId(graph_tile, tile_dir);
 }
 
 }

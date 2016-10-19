@@ -4,6 +4,7 @@
 #include <vector>
 
 #include <valhalla/baldr/connectivity_map.h>
+#include "mjolnir/util.h"
 #include "config.h"
 
 using namespace valhalla::baldr;
@@ -113,7 +114,7 @@ int main(int argc, char** argv) {
   boost::property_tree::read_json(config_file_path.c_str(), pt);
 
   // Get something we can use to fetch tiles
-  valhalla::baldr::TileHierarchy tile_hierarchy(pt.get<std::string>("mjolnir.tile_dir"));
+  valhalla::baldr::TileHierarchy tile_hierarchy(CreateTileStorage(pt));
   valhalla::baldr::connectivity_map_t connectivity_map(tile_hierarchy);
 
   uint32_t transit_level = tile_hierarchy.levels().rbegin()->second.level + 1;

@@ -23,6 +23,7 @@
 #include <valhalla/baldr/graphconstants.h>
 #include <valhalla/baldr/signinfo.h>
 #include <valhalla/baldr/graphreader.h>
+#include <valhalla/baldr/graphtilefsstorage.h>
 #include <valhalla/skadi/sample.h>
 #include <valhalla/skadi/util.h>
 
@@ -845,7 +846,7 @@ void GraphBuilder::Build(const boost::property_tree::ptree& pt, const OSMData& o
     const std::string& ways_file, const std::string& way_nodes_file) {
   std::string nodes_file = "nodes.bin";
   std::string edges_file = "edges.bin";
-  TileHierarchy tile_hierarchy(pt.get<std::string>("mjolnir.tile_dir"));
+  TileHierarchy tile_hierarchy(CreateTileStorage(pt));
   unsigned int threads = std::max(static_cast<unsigned int>(1),
                                   pt.get<unsigned int>("mjolnir.concurrency", std::thread::hardware_concurrency()));
   const auto& tl = tile_hierarchy.levels().rbegin();

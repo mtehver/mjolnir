@@ -1,5 +1,6 @@
 //#include "mjolnir/transitbuilder.h"
 //#include "mjolnir/graphtilebuilder.h"
+#include "mjolnir/util.h"
 #include "proto/transit.pb.h"
 
 #include <unordered_map>
@@ -394,7 +395,7 @@ int main(int argc, char *argv[]) {
 
   // Get the tile
   PointLL stopll(lng, lat);
-  TileHierarchy hierarchy(pt.get<std::string>("mjolnir.tile_dir"));
+  TileHierarchy hierarchy(CreateTileStorage(pt));
   auto local_level = hierarchy.levels().rbegin()->second.level;
   auto tiles = hierarchy.levels().rbegin()->second.tiles;
   uint32_t tileid = tiles.TileId(stopll);

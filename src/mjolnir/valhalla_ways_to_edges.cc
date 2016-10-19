@@ -4,6 +4,7 @@
 #include <vector>
 #include <unordered_map>
 
+#include "mjolnir/util.h"
 #include "config.h"
 
 #include <ostream>
@@ -105,7 +106,7 @@ int main(int argc, char** argv) {
   boost::property_tree::read_json(config_file_path.c_str(), pt);
 
   // Get something we can use to fetch tiles
-  valhalla::baldr::TileHierarchy tile_hierarchy(pt.get<std::string>("mjolnir.tile_dir"));
+  valhalla::baldr::TileHierarchy tile_hierarchy(CreateTileStorage(pt));
   auto local_level = tile_hierarchy.levels().rbegin()->second.level;
   auto tiles = tile_hierarchy.levels().rbegin()->second.tiles;
 

@@ -24,9 +24,11 @@
 #include <valhalla/baldr/graphtile.h>
 #include <valhalla/baldr/datetime.h>
 #include <valhalla/baldr/graphreader.h>
+#include <valhalla/baldr/graphtilefsstorage.h>
 #include <valhalla/midgard/util.h>
 
 #include "mjolnir/graphtilebuilder.h"
+#include "mjolnir/util.h"
 #include "proto/transit.pb.h"
 
 using namespace boost::property_tree;
@@ -89,7 +91,7 @@ GraphId TransitToTile(const boost::property_tree::ptree& pt, const std::string& 
   auto graph_tile = tile_dir + transit_tile.substr(transit_dir.size());
   boost::algorithm::trim_if(graph_tile, boost::is_any_of(".pbf"));
   graph_tile += ".gph";
-  return GraphTile::GetTileId(graph_tile, tile_dir);
+  return GraphTileFsStorage::GetTileId(graph_tile, tile_dir);
 }
 
 struct logged_error_t: public std::runtime_error {
@@ -185,7 +187,7 @@ std::priority_queue<weighted_tile_t> which_tiles(const ptree& pt) {
   auto import_level = pt.get_optional<std::string>("import_level") ? "&import_level=" +
       pt.get<std::string>("import_level") : "";
 
-  TileHierarchy hierarchy(pt.get<std::string>("mjolnir.tile_dir"));
+  TileHierarchy hierarchy(CreateTileStorage(pt));
   std::set<GraphId> tiles;
   const auto& tile_level = hierarchy.levels().rbegin()->second;
   curler_t curler;
@@ -545,7 +547,7 @@ void write_pbf(const Transit& tile, const boost::filesystem::path& transit_tile)
 }
 
 void fetch_tiles(const ptree& pt, std::priority_queue<weighted_tile_t>& queue, unique_transit_t& uniques, std::promise<std::list<GraphId> >& promise) {
-  TileHierarchy hierarchy(pt.get<std::string>("mjolnir.tile_dir"));
+  TileHierarchy hierarchy(CreateTileStorage(pt));
   const auto& tiles = hierarchy.levels().rbegin()->second.tiles;
   std::list<GraphId> dangling;
   curler_t curler;
@@ -732,7 +734,7 @@ GraphId id(const boost::property_tree::ptree& pt, const std::string& transit_til
   auto graph_tile = tile_dir + transit_tile.substr(transit_dir.size());
   boost::algorithm::trim_if(graph_tile, boost::is_any_of(".pbf"));
   graph_tile += ".gph";
-  return GraphTile::GetTileId(graph_tile, tile_dir);
+  return GraphTileFsStorage::GetTileId(graph_tile, tile_dir);
 }
 
 Transit read_pbf(const std::string& file_name, std::mutex& lock) {
@@ -770,7 +772,7 @@ struct dist_sort_t {
 };
 
 void stitch_tiles(const ptree& pt, const std::unordered_set<GraphId>& all_tiles, std::list<GraphId>& tiles, std::mutex& lock) {
-  TileHierarchy hierarchy(pt.get<std::string>("mjolnir.tile_dir"));
+  TileHierarchy hierarchy(CreateTileStorage(pt));
   auto grid = hierarchy.levels().rbegin()->second.tiles;
   auto tile_name = [&hierarchy, &pt](const GraphId& id){
     auto file_name = GraphTile::FileSuffix(id, hierarchy);
@@ -1732,7 +1734,7 @@ int main(int argc, char** argv) {
   curl_global_cleanup();
 
   //figure out which transit tiles even exist
-  TileHierarchy hierarchy(pt.get<std::string>("mjolnir.tile_dir"));
+  TileHierarchy hierarchy(CreateTileStorage(pt));
   boost::filesystem::recursive_directory_iterator transit_file_itr(pt.get<std::string>("mjolnir.transit_dir") + '/' +
                                                                    std::to_string(hierarchy.levels().rbegin()->first));
   boost::filesystem::recursive_directory_iterator end_file_itr;

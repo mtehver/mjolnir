@@ -1,5 +1,5 @@
-
 #include "statistics.h"
+#include "mjolnir/util.h"
 
 #include <ostream>
 #include <boost/format.hpp>
@@ -479,7 +479,7 @@ void build(const boost::property_tree::ptree& pt,
 void BuildStatistics(const boost::property_tree::ptree& pt) {
 
   // Graphreader
-  TileHierarchy hierarchy(pt.get<std::string>("mjolnir.tile_dir"));
+  TileHierarchy hierarchy(CreateTileStorage(pt));
   // Make sure there are at least 2 levels!
   if (hierarchy.levels().size() < 2)
     throw std::runtime_error("Bad tile hierarchy - need 2 levels");
@@ -593,8 +593,7 @@ int main (int argc, char** argv) {
   }
 
   //set up directory
-  auto tile_dir = pt.get<std::string>("mjolnir.tile_dir");
-  valhalla::baldr::TileHierarchy hierarchy(tile_dir);
+  valhalla::baldr::TileHierarchy hierarchy(CreateTileStorage(pt));
 
   BuildStatistics(pt);
 

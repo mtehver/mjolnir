@@ -1,10 +1,19 @@
 #include "mjolnir/util.h"
+#include <valhalla/baldr/graphtilefsstorage.h>
 
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/classification.hpp>
 
 namespace valhalla {
 namespace mjolnir {
+
+/**
+ * Create the tile storage handler for given configuration.
+ */
+std::shared_ptr<valhalla::baldr::GraphTileStorage> CreateTileStorage(const boost::property_tree::ptree& pt, const std::string& key) {
+   std::string tile_dir = pt.get<std::string>(key);
+   return std::make_shared<valhalla::baldr::GraphTileFsStorage>(tile_dir);
+}
 
 /**
  * Splits a tag into a vector of strings.  Delim defaults to ;

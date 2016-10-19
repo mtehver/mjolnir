@@ -1,6 +1,6 @@
-
 #include "mjolnir/graphvalidator.h"
 #include "mjolnir/graphtilebuilder.h"
+#include "mjolnir/util.h"
 
 #include <valhalla/midgard/logging.h>
 
@@ -495,7 +495,7 @@ namespace mjolnir {
   void GraphValidator::Validate(const boost::property_tree::ptree& pt) {
 
     // Graphreader
-    TileHierarchy hierarchy(pt.get<std::string>("mjolnir.tile_dir"));
+    TileHierarchy hierarchy(CreateTileStorage(pt));
     // Make sure there are at least 2 levels!
     auto numHierarchyLevels = hierarchy.levels().size();
     if (numHierarchyLevels < 2)

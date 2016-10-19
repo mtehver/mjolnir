@@ -4,9 +4,17 @@
 #include <vector>
 #include <string>
 
+#include <boost/property_tree/ptree.hpp>
+
 namespace valhalla {
 namespace mjolnir {
 
+/**
+ * Creates the tile storage handler for specified configuration.
+ * @param  pt The configuration to use.
+ * @return The storage handler instance.
+ */
+std::shared_ptr<valhalla::baldr::GraphTileStorage> CreateTileStorage(const boost::property_tree::ptree& pt, const std::string& key = "mjolnir.tile_dir");
 
 /**
  * Splits a tag into a vector of strings.

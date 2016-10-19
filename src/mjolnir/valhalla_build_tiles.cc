@@ -7,6 +7,7 @@
 #include "mjolnir/transitbuilder.h"
 #include "mjolnir/graphenhancer.h"
 #include "mjolnir/hierarchybuilder.h"
+#include "mjolnir/util.h"
 #include <valhalla/baldr/tilehierarchy.h>
 #include "config.h"
 
@@ -105,7 +106,7 @@ int main(int argc, char** argv) {
 
   //set up the directories and purge old tiles
   auto tile_dir = pt.get<std::string>("mjolnir.tile_dir");
-  valhalla::baldr::TileHierarchy hierarchy(tile_dir);
+  valhalla::baldr::TileHierarchy hierarchy(CreateTileStorage(pt));
   for(const auto& level : hierarchy.levels()) {
     auto level_dir = tile_dir + "/" + std::to_string(level.first);
     if(boost::filesystem::exists(level_dir) && !boost::filesystem::is_empty(level_dir)) {
