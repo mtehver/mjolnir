@@ -25,7 +25,7 @@
 #include <valhalla/baldr/tilehierarchy.h>
 #include <valhalla/baldr/graphid.h>
 #include <valhalla/baldr/graphconstants.h>
-#include <valhalla/baldr/graphreader.h>
+#include <valhalla/baldr/graphfsreader.h>
 #include <valhalla/baldr/nodeinfo.h>
 
 using namespace valhalla::midgard;
@@ -256,7 +256,7 @@ void validate(const boost::property_tree::ptree& pt,
     // Our local copy of edges binned to tiles that they pass through (dont start or end in)
     tweeners_t tweeners;
     // Local Graphreader
-    GraphReader graph_reader(pt.get_child("mjolnir"));
+    GraphFsReader graph_reader(pt.get_child("mjolnir"));
     // Get some things we need throughout
     const auto& hierarchy = graph_reader.GetTileHierarchy();
     auto numLevels = hierarchy.levels().size() + 1;    // To account for transit

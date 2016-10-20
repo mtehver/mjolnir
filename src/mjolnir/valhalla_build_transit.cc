@@ -23,7 +23,7 @@
 #include <valhalla/baldr/tilehierarchy.h>
 #include <valhalla/baldr/graphtile.h>
 #include <valhalla/baldr/datetime.h>
-#include <valhalla/baldr/graphreader.h>
+#include <valhalla/baldr/graphfsreader.h>
 #include <valhalla/baldr/graphtilefsstorage.h>
 #include <valhalla/midgard/util.h>
 
@@ -254,7 +254,7 @@ std::priority_queue<weighted_tile_t> which_tiles(const ptree& pt) {
     //we have anything we want it
     if(stops_total > 0/* || routes_total > 0|| pairs_total > 0*/) {
       prioritized.push(weighted_tile_t{tile, stops_total + 10/* + routes_total * 1000 + pairs_total*/}); //TODO: factor in stop pairs as well
-      LOG_INFO(GraphTile::FileSuffix(tile, hierarchy) + " should have " + std::to_string(stops_total) +  " stops "/* +
+      LOG_INFO(GraphTileFsStorage::FileSuffix(tile, hierarchy) + " should have " + std::to_string(stops_total) +  " stops "/* +
           std::to_string(routes_total) +  " routes and " + std::to_string(pairs_total) +  " stop_pairs"*/);
     }
   }
@@ -576,7 +576,7 @@ void fetch_tiles(const ptree& pt, std::priority_queue<weighted_tile_t>& queue, u
         pt.get<std::string>("import_level") : "";
 
     Transit tile;
-    auto file_name = GraphTile::FileSuffix(current, hierarchy);
+    auto file_name = GraphTileFsStorage::FileSuffix(current, hierarchy);
     file_name = file_name.substr(0, file_name.size() - 3) + "pbf";
     boost::filesystem::path transit_tile = pt.get<std::string>("mjolnir.transit_dir") + '/' + file_name;
 
@@ -775,7 +775,7 @@ void stitch_tiles(const ptree& pt, const std::unordered_set<GraphId>& all_tiles,
   TileHierarchy hierarchy(CreateTileStorage(pt));
   auto grid = hierarchy.levels().rbegin()->second.tiles;
   auto tile_name = [&hierarchy, &pt](const GraphId& id){
-    auto file_name = GraphTile::FileSuffix(id, hierarchy);
+    auto file_name = GraphTileFsStorage::FileSuffix(id, hierarchy);
     file_name = file_name.substr(0, file_name.size() - 3) + "pbf";
     return pt.get<std::string>("mjolnir.transit_dir") + '/' + file_name;
   };
@@ -1354,7 +1354,7 @@ void AddToGraph(GraphTileBuilder& tilebuilder_transit,
       } else {
         // Get Transit PBF data for this tile
         // Get transit pbf tile
-        std::string file_name = GraphTile::FileSuffix(GraphId(end_stop_graphid.tileid(), end_stop_graphid.level(),0), hierarchy_transit);
+        std::string file_name = GraphTileFsStorage::FileSuffix(GraphId(end_stop_graphid.tileid(), end_stop_graphid.level(),0), hierarchy_transit);
         boost::algorithm::trim_if(file_name, boost::is_any_of(".gph"));
         file_name += ".pbf";
         const std::string file = transit_dir + '/' + file_name;
@@ -1448,7 +1448,7 @@ void build_tiles(const boost::property_tree::ptree& pt, std::mutex& lock,
                  std::promise<builder_stats>& results) {
 
   uint32_t no_dir_edge_count = 0;
-  GraphReader reader_transit_level(pt);
+  GraphFsReader reader_transit_level(pt);
   const TileHierarchy& hierarchy_transit_level = reader_transit_level.GetTileHierarchy();
 
   // Iterate through the tiles in the queue and find any that include stops
@@ -1462,7 +1462,7 @@ void build_tiles(const boost::property_tree::ptree& pt, std::mutex& lock,
     const std::string transit_dir = pt.get<std::string>("transit_dir");
     //std::cout << transit_dir << std::endl;
 
-    std::string file_name = GraphTile::FileSuffix(GraphId(tile_id.tileid(), tile_id.level(),0), hierarchy_transit_level);
+    std::string file_name = GraphTileFsStorage::FileSuffix(GraphId(tile_id.tileid(), tile_id.level(),0), hierarchy_transit_level);
     boost::algorithm::trim_if(file_name, boost::is_any_of(".gph"));
     file_name += ".pbf";
     const std::string file = transit_dir + '/' + file_name;

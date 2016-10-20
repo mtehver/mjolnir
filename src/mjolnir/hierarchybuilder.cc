@@ -15,7 +15,7 @@
 #include <valhalla/baldr/graphid.h>
 #include <valhalla/baldr/graphconstants.h>
 #include <valhalla/baldr/graphtile.h>
-#include <valhalla/baldr/graphreader.h>
+#include <valhalla/baldr/graphfsreader.h>
 #include <valhalla/skadi/sample.h>
 #include <valhalla/skadi/util.h>
 
@@ -75,7 +75,7 @@ struct EdgePairs {
 struct hierarchy_info {
   uint32_t contractcount_;
   uint32_t shortcutcount_;
-  GraphReader graphreader_;
+  GraphFsReader graphreader_;
   std::vector<std::vector<NewNode> > tilednodes_;
   std::unordered_map<uint64_t, GraphId> nodemap_;
   std::unordered_map<uint64_t, EdgePairs> contractions_;

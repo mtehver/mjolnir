@@ -1,9 +1,10 @@
 #ifndef VALHALLA_MJOLNIR_UTIL_H_
 #define VALHALLA_MJOLNIR_UTIL_H_
 
+#include <valhalla/baldr/graphtilestorage.h>
+
 #include <vector>
 #include <string>
-
 #include <boost/property_tree/ptree.hpp>
 
 namespace valhalla {

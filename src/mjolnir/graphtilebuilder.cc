@@ -723,6 +723,14 @@ std::array<std::vector<GraphId>, kBinCount> GraphTileBuilder::BinEdges(const Til
 }
 
 void GraphTileBuilder::AddBins(const TileHierarchy& hierarchy, const GraphTile* tile, const std::array<std::vector<GraphId>, kBinCount>& more_bins) {
+  // Retrieve tile path
+  std::string tile_dir;
+  if (auto storage = std::dynamic_pointer_cast<GraphTileFsStorage>(hierarchy.tile_storage())) {
+    tile_dir = storage->GetTileDir();
+  } else {
+    LOG_WARN("Expecting GraphTileFsStorage instance in hierarchy");
+  }
+
   //read bins and append and keep track of how much is appended
   std::vector<GraphId> bins[kBinCount];
   uint32_t shift = 0;
@@ -744,7 +752,7 @@ void GraphTileBuilder::AddBins(const TileHierarchy& hierarchy, const GraphTile* 
   header.set_edgeinfo_offset(header.edgeinfo_offset() + shift);
   header.set_textlist_offset(header.textlist_offset() + shift);
   //rewrite the tile
-  boost::filesystem::path filename = tile_dir_ + '/' + GraphTileFsStorage::FileSuffix(header.graphid(), hierarchy);
+  boost::filesystem::path filename = tile_dir + '/' + GraphTileFsStorage::FileSuffix(header.graphid(), hierarchy);
   if(!boost::filesystem::exists(filename.parent_path()))
     boost::filesystem::create_directories(filename.parent_path());
   std::ofstream file(filename.c_str(), std::ios::out | std::ios::binary | std::ios::trunc);

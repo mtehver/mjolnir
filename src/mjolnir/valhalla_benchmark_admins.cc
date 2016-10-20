@@ -31,7 +31,7 @@
 #include <valhalla/baldr/graphid.h>
 #include <valhalla/baldr/graphconstants.h>
 #include <valhalla/baldr/graphtile.h>
-#include <valhalla/baldr/graphreader.h>
+#include <valhalla/baldr/graphfsreader.h>
 #include <valhalla/baldr/admininfo.h>
 #include <valhalla/midgard/aabb2.h>
 #include <valhalla/midgard/constants.h>
@@ -184,7 +184,7 @@ std::cout << "In Benchmark" << std::endl;
   }
 
   // Graphreader
-  GraphReader reader(pt.get_child("hierarchy"));
+  GraphFsReader reader(pt.get_child("hierarchy"));
   auto tile_hierarchy = reader.GetTileHierarchy();
   auto local_level = tile_hierarchy.levels().rbegin()->second.level;
   auto tiles = tile_hierarchy.levels().rbegin()->second.tiles;
@@ -195,7 +195,7 @@ std::cout << "In Benchmark" << std::endl;
   for (uint32_t id = 0; id < tiles.TileCount(); id++) {
     // Get the admin polys if there is data for tiles that exist
     GraphId tile_id(id, local_level, 0);
-    if (GraphReader::DoesTileExist(tile_hierarchy, tile_id)) {
+    if (GraphFsReader::DoesTileExist(tile_hierarchy, tile_id)) {
       polys = GetAdminInfo(db_handle, drive_on_right, tiles.TileBounds(id));
       LOG_INFO("polys: " + std::to_string(polys.size()));
       if (polys.size() < 128) {

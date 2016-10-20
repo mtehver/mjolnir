@@ -20,7 +20,8 @@
 #include <google/protobuf/io/coded_stream.h>
 
 #include <valhalla/baldr/datetime.h>
-#include <valhalla/baldr/graphreader.h>
+#include <valhalla/baldr/graphfsreader.h>
+#include <valhalla/baldr/graphtilefsstorage.h>
 #include <valhalla/midgard/util.h>
 #include <valhalla/midgard/logging.h>
 
@@ -51,7 +52,7 @@ Transit read_pbf(const std::string& file_name) {
 Transit read_pbf(const GraphId& id, const TileHierarchy& hierarchy,
                  const std::string& transit_dir,
                  std::string& file_name) {
-  std::string fname = GraphTile::FileSuffix(id, hierarchy);
+  std::string fname = GraphTileFsStorage::FileSuffix(id, hierarchy);
   fname = fname.substr(0, fname.size() - 3) + "pbf";
   file_name = transit_dir + '/' + fname;
   Transit transit;

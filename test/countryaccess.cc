@@ -14,7 +14,8 @@
 #include <valhalla/baldr/graphconstants.h>
 #include <valhalla/baldr/directededge.h>
 #include <valhalla/baldr/graphid.h>
-#include <valhalla/baldr/graphreader.h>
+#include <valhalla/baldr/graphfsreader.h>
+#include <valhalla/baldr/graphtilefsstorage.h>
 
 using namespace std;
 using namespace valhalla::mjolnir;
@@ -78,9 +79,9 @@ void CountryAccess(const std::string& config_file) {
 
   //load a tile and test the default access.
   GraphId id(820099,2,0);
-  GraphTile t(TileHierarchy("test/data/amsterdam_tiles"), id);
+  GraphTile t(TileHierarchy(std::make_shared<GraphTileFsStorage>("test/data/amsterdam_tiles")), id);
 
-  GraphReader graph_reader(conf.get_child("mjolnir"));
+  GraphFsReader graph_reader(conf.get_child("mjolnir"));
   const auto& hierarchy = graph_reader.GetTileHierarchy();
 
   GraphTileBuilder tilebuilder(hierarchy, id, true);
@@ -140,9 +141,9 @@ void CountryAccess(const std::string& config_file) {
 
   //load a tile and test that the country level access is set.
   GraphId id2(820099,2,0);
-  GraphTile t2(TileHierarchy("test/data/amsterdam_tiles"), id2);
+  GraphTile t2(TileHierarchy(std::make_shared<GraphTileFsStorage>("test/data/amsterdam_tiles")), id2);
 
-  GraphReader graph_reader2(conf.get_child("mjolnir"));
+  GraphFsReader graph_reader2(conf.get_child("mjolnir"));
   const auto& hierarchy2 = graph_reader2.GetTileHierarchy();
 
   GraphTileBuilder tilebuilder2(hierarchy2, id2, true);

@@ -24,7 +24,7 @@
 
 #include <valhalla/baldr/datetime.h>
 #include <valhalla/baldr/graphtile.h>
-#include <valhalla/baldr/graphreader.h>
+#include <valhalla/baldr/graphfsreader.h>
 #include <valhalla/baldr/graphtilefsstorage.h>
 #include <valhalla/midgard/util.h>
 #include <valhalla/midgard/logging.h>
@@ -92,7 +92,7 @@ GraphId GetGraphId(const GraphId& nodeid,
 // Get PBF transit data given a GraphId / tile
 Transit read_pbf(const GraphId& id, const TileHierarchy& hierarchy,
                  const std::string& transit_dir) {
-  std::string fname = GraphTile::FileSuffix(id, hierarchy);
+  std::string fname = GraphTileFsStorage::FileSuffix(id, hierarchy);
   fname = fname.substr(0, fname.size() - 3) + "pbf";
   std::string file_name = transit_dir + '/' + fname;
   std::fstream file(file_name, std::ios::in | std::ios::binary);
@@ -351,7 +351,7 @@ void ConnectToGraph(GraphTileBuilder& tilebuilder_local,
 // Add connection edges from the transit stop to an OSM edge
 void AddOSMConnection(const Transit_Stop& stop, const GraphTile* tile,
                       const TileHierarchy& tilehierarchy,
-                      GraphReader& reader,
+                      GraphFsReader& reader,
                       std::mutex& lock,
                       std::vector<OSMConnectionEdge>& connection_edges) {
   PointLL stop_ll = {stop.lon(), stop.lat() };
@@ -476,10 +476,10 @@ void build(const std::string& transit_dir,
            std::unordered_set<GraphId>::const_iterator tile_end,
            std::promise<builder_stats>& results) {
   // Local Graphreader. Get tile information so we can find bounding boxes
-  GraphReader reader_local_level(pt);
+  GraphFsReader reader_local_level(pt);
   const TileHierarchy& hierarchy_local_level = reader_local_level.GetTileHierarchy();
 
-  GraphReader reader_transit_level(pt);
+  GraphFsReader reader_transit_level(pt);
   const TileHierarchy& hierarchy_transit_level = reader_transit_level.GetTileHierarchy();
 
   // Iterate through the tiles in the queue and find any that include stops
@@ -494,7 +494,7 @@ void build(const std::string& transit_dir,
     GraphId tile_id = tile_start->Tile_Base();
 
     // Get transit pbf tile
-    std::string file_name = GraphTile::FileSuffix(GraphId(tile_id.tileid(), tile_id.level(),0), hierarchy_local_level);
+    std::string file_name = GraphTileFsStorage::FileSuffix(GraphId(tile_id.tileid(), tile_id.level(),0), hierarchy_local_level);
     boost::algorithm::trim_if(file_name, boost::is_any_of(".gph"));
     file_name += ".pbf";
     const std::string file = transit_dir + file_name;
@@ -604,7 +604,7 @@ void TransitBuilder::Build(const boost::property_tree::ptree& pt) {
   }
   // Also bail if nothing inside
   transit_dir->push_back('/');
-  GraphReader reader(pt.get_child("mjolnir"));
+  GraphFsReader reader(pt.get_child("mjolnir"));
   const auto& hierarchy = reader.GetTileHierarchy();
   auto local_level = hierarchy.levels().rbegin()->first;
   if(boost::filesystem::is_directory(*transit_dir + std::to_string(local_level + 1) + "/")) {
@@ -614,10 +614,10 @@ void TransitBuilder::Build(const boost::property_tree::ptree& pt) {
         auto graph_id = TransitToTile(pt, transit_file_itr->path().string());
         auto local_graph_id = graph_id;
         local_graph_id.fields.level -= 1;
-        if(GraphReader::DoesTileExist(hierarchy, local_graph_id)) {
+        if(GraphFsReader::DoesTileExist(hierarchy, local_graph_id)) {
           const GraphTile* tile = reader.GetGraphTile(local_graph_id);
           tiles.emplace(local_graph_id);
-          const std::string destination_path = pt.get<std::string>("mjolnir.tile_dir") + '/' + GraphTile::FileSuffix(graph_id, hierarchy);
+          const std::string destination_path = pt.get<std::string>("mjolnir.tile_dir") + '/' + GraphTileFsStorage::FileSuffix(graph_id, hierarchy);
           boost::filesystem::path filename = destination_path;
           // Make sure the directory exists on the system and copy to the tile_dir
           if (!boost::filesystem::exists(filename.parent_path()))

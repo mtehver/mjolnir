@@ -25,7 +25,7 @@
 #include <valhalla/baldr/tilehierarchy.h>
 #include <valhalla/baldr/graphid.h>
 #include <valhalla/baldr/graphconstants.h>
-#include <valhalla/baldr/graphreader.h>
+#include <valhalla/baldr/graphfsreader.h>
 #include <valhalla/baldr/nodeinfo.h>
 
 using namespace valhalla::midgard;
@@ -346,7 +346,7 @@ void build(const boost::property_tree::ptree& pt,
     // Our local class for gathering the stats
     statistics stats;
     // Local Graphreader
-    GraphReader graph_reader(pt.get_child("mjolnir"));
+    GraphFsReader graph_reader(pt.get_child("mjolnir"));
     // Get some things we need throughout
     const auto& hierarchy = graph_reader.GetTileHierarchy();
 
